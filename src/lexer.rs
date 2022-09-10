@@ -1,10 +1,11 @@
-/// Lexter for Lisp
-/// Very simple since we have atoms (alphanumeric) and parenthesis.
+/// Lexer for Lisp
+/// Very simple since we have only atoms (alphanumeric) and parenthesis.
 #[derive(Debug, Eq, PartialEq)]
 pub enum Lexeme {
     LPar,
     RPar,
     AlphaNum(String),
+    Invalid(char),
 }
 
 /// State for the lexer
@@ -41,7 +42,8 @@ impl<'a> Lexer<'a> {
                 _ if ch.is_whitespace() => { self.iter.next(); self.lex_next() },
                 '(' => { self.iter.next(); Some(Lexeme::LPar) },
                 ')' => { self.iter.next(); Some(Lexeme::RPar) },
-                _ => self.lex_alphanumeric()
+                _ if ch.is_alphabetic() => self.lex_alphanumeric(),
+                _ => { self.iter.next(); Some(Lexeme::Invalid(ch)) },
             }
         } else {
             None
@@ -134,6 +136,20 @@ mod tests {
         assert_eq!(Some(Lexeme::LPar), sut.next());
         assert_eq!(Some(Lexeme::AlphaNum(String::from("ABC"))), sut.next());
         assert_eq!(Some(Lexeme::RPar), sut.next());
+        assert_eq!(None, sut.next());
+    }
+
+    #[test]
+    fn lexer_must_return_invalid_on_non_atom_non_paren_punctuation() {
+        let mut sut = lex(".");
+        assert_eq!(Some(Lexeme::Invalid('.')), sut.next());
+        assert_eq!(None, sut.next());
+    }
+
+    #[test]
+    fn lexer_must_return_invalid_on_non_atom_non_paren_bracket() {
+        let mut sut = lex("[");
+        assert_eq!(Some(Lexeme::Invalid('[')), sut.next());
         assert_eq!(None, sut.next());
     }
 
