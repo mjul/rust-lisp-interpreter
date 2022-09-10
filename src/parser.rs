@@ -106,7 +106,7 @@ pub fn parse(input: &str) -> Result<SExpression, SyntaxError> {
         (Result::Ok(_), false) => Result::Err(SyntaxError::EndOfFileExpected(
             String::from("Syntax error: Expected end of file."),
             remaining,
-        ))
+        )),
     }
 }
 
@@ -227,6 +227,10 @@ mod tests {
         );
     }
 
+    // An S-expression is then simply an ordered pair, the terms of which may be
+    // atomic symbols or simpler S-expressions
+
+    // Pair of only atoms
     #[test]
     fn parse_pair_of_atom_atom() {
         let actual = parse("(A B)");
@@ -239,6 +243,7 @@ mod tests {
         );
     }
 
+    // Pair of atom and S-expression
     #[test]
     fn parse_pair_of_pair_atom() {
         let actual = parse("((A B) C)");
@@ -254,6 +259,7 @@ mod tests {
         );
     }
 
+    // Pair of atom and S-expression
     #[test]
     fn parse_pair_of_atom_pair() {
         let actual = parse("(A (B C))");
@@ -263,6 +269,25 @@ mod tests {
                 Box::new(SExpression::PAIR(
                     Box::new(SExpression::ATOM(String::from("B"))),
                     Box::new(SExpression::ATOM(String::from("C")))
+                )),
+            )),
+            actual
+        );
+    }
+
+    // Pair of two S-expressions
+    #[test]
+    fn parse_pair_of_pair_pair() {
+        let actual = parse("((A B) (C D))");
+        assert_eq!(
+            Result::Ok(SExpression::PAIR(
+                Box::new(SExpression::PAIR(
+                    Box::new(SExpression::ATOM(String::from("A"))),
+                    Box::new(SExpression::ATOM(String::from("B")))
+                )),
+                Box::new(SExpression::PAIR(
+                    Box::new(SExpression::ATOM(String::from("C"))),
+                    Box::new(SExpression::ATOM(String::from("D")))
                 )),
             )),
             actual
