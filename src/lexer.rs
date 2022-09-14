@@ -67,7 +67,7 @@ impl<'a> Lexer<'a> {
 impl<'a> From<&'a str> for Lexer<'a> {
     fn from(input: &'a str) -> Self {
         let iter = input.chars().peekable();
-        Lexer { iter: iter }
+        Lexer { iter }
     }
 }
 
