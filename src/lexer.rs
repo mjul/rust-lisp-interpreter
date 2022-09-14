@@ -19,12 +19,8 @@ pub struct Lexer<'a> {
 impl<'a> Lexer<'a> {
     fn lex_alphanumeric(&mut self) -> Option<Lexeme> {
         let mut result = String::new();
-        while let Some(&ch) = self.iter.peek() {
-            if ch.is_alphanumeric() {
-                result.push(self.iter.next()?);
-            } else {
-                break;
-            }
+        while let Some(ch) = self.iter.next_if(|&ch| ch.is_alphanumeric()) {
+            result.push(ch);
         }
         if result.is_empty() {
             None
