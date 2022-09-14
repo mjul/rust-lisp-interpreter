@@ -17,6 +17,11 @@ pub struct Lexer<'a> {
 }
 
 impl<'a> Lexer<'a> {
+    fn skip_whitespace(&mut self) {
+        while let Some(_) = self.iter.next_if(|&ch| ch.is_whitespace()) {
+            // skip it
+        }
+    }
     fn lex_alphanumeric(&mut self) -> Option<Lexeme> {
         let mut result = String::new();
         while let Some(ch) = self.iter.next_if(|&ch| ch.is_alphanumeric()) {
@@ -30,12 +35,9 @@ impl<'a> Lexer<'a> {
     }
 
     fn lex_next(&mut self) -> Option<Lexeme> {
+        self.skip_whitespace();
         if let Some(&ch) = self.iter.peek() {
             match ch {
-                _ if ch.is_whitespace() => {
-                    self.iter.next();
-                    self.lex_next()
-                }
                 '(' => {
                     self.iter.next();
                     Some(Lexeme::LPar)
