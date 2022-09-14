@@ -118,7 +118,8 @@ fn parse_next<'a>(mut lexer: lexer::Lexer<'a>) -> (Result<LispExpr, SyntaxError>
         }
         Some(lexer::Lexeme::AlphaNum(s)) => {
             (Result::Ok(LispExpr::SExpr(SExpression::ATOM(s))), lexer)
-        }
+        },
+        _ => { todo!("not implemented yet"); }
     }
 }
 

@@ -4,6 +4,8 @@
 pub enum Lexeme {
     LPar,
     RPar,
+    LBracket,
+    RBracket,
     AlphaNum(String),
     Invalid(char),
 }
@@ -42,6 +44,8 @@ impl<'a> Lexer<'a> {
                 _ if ch.is_whitespace() => { self.iter.next(); self.lex_next() },
                 '(' => { self.iter.next(); Some(Lexeme::LPar) },
                 ')' => { self.iter.next(); Some(Lexeme::RPar) },
+                '[' => { self.iter.next(); Some(Lexeme::LBracket) },
+                ']' => { self.iter.next(); Some(Lexeme::RBracket) },
                 _ if ch.is_alphabetic() => self.lex_alphanumeric(),
                 _ => { self.iter.next(); Some(Lexeme::Invalid(ch)) },
             }
@@ -81,6 +85,21 @@ mod tests {
         assert_eq!(Some(Lexeme::RPar), lexer.next());
         assert_eq!(None, lexer.next());
     }
+
+    #[test]
+    fn lexer_must_recognize_left_bracket() {
+        let mut lexer = lex("[");
+        assert_eq!(Some(Lexeme::LBracket), lexer.next());
+        assert_eq!(None, lexer.next());
+    }
+
+    #[test]
+    fn lexer_must_recognize_right_bracket() {
+        let mut lexer = lex("]");
+        assert_eq!(Some(Lexeme::RBracket), lexer.next());
+        assert_eq!(None, lexer.next());
+    }
+
 
     #[test]
     fn lexer_must_ignore_whitespace_before_lexeme() {
@@ -149,9 +168,9 @@ mod tests {
     }
 
     #[test]
-    fn lexer_must_return_invalid_on_non_atom_non_paren_bracket() {
-        let mut sut = lex("[");
-        assert_eq!(Some(Lexeme::Invalid('[')), sut.next());
+    fn lexer_must_return_invalid_on_non_atom_non_paren_curly() {
+        let mut sut = lex("{");
+        assert_eq!(Some(Lexeme::Invalid('{')), sut.next());
         assert_eq!(None, sut.next());
     }
 
