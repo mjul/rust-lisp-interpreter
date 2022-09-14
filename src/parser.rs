@@ -77,7 +77,12 @@ pub fn unparse(expr: &LispExpr) -> String {
     result
 }
 
-fn parse_next<'a>(mut lexer: lexer::Lexer<'a>) -> (Result<LispExpr, SyntaxError>, lexer::Lexer) {
+fn parse_next<'a>(
+    mut lexer: std::iter::Peekable<lexer::Lexer<'a>>,
+) -> (
+    Result<LispExpr, SyntaxError>,
+    std::iter::Peekable<lexer::Lexer<'a>>,
+) {
     let l = lexer.next();
     match l {
         None => (
@@ -119,25 +124,29 @@ fn parse_next<'a>(mut lexer: lexer::Lexer<'a>) -> (Result<LispExpr, SyntaxError>
             }
         }
         Some(lexer::Lexeme::AlphaNum(s)) => {
-            match s.chars().next() {
-                Some(initial) if initial.is_lowercase() => {
-                    // M-Expression
-                    let lbra = lexer.next();
-                    let (first_inner, mut lexer) = parse_next(lexer);
-                    let rbra = lexer.next();
-                    match (lbra, first_inner, rbra) {
-                        (
-                            Some(lexer::Lexeme::LBracket),
-                            Result::Ok(first_arg),
-                            Some(lexer::Lexeme::RBracket),
-                        ) => {
-                            // single arg meta-function
-                            (Result::Ok(LispExpr::MExpr(s, vec![first_arg])), lexer)
+            match lexer.next_if_eq(&lexer::Lexeme::LBracket) {
+                Some(_) => {
+                    // name then left bracket => M-Expression
+                    let mut args = vec![];
+                    while lexer.next_if_eq(&lexer::Lexeme::RBracket).is_none() {
+                        // end bracket not reached, capture all arguments
+                        let (arg, l_next) = parse_next(lexer);
+                        lexer = l_next;
+                        match arg {
+                            Ok(a) => {
+                                args.push(a);
+                            }
+                            _ => {
+                                todo!("what about errors");
+                            }
                         }
-                        _ => todo!("M-Expressions not fully implemented"),
                     }
+                    (Result::Ok(LispExpr::MExpr(s, args)), lexer)
                 }
-                _ => (Result::Ok(LispExpr::SExpr(SExpression::ATOM(s))), lexer),
+                None => {
+                    // No bracket following alphanumeric string => S-Expression
+                    (Result::Ok(LispExpr::SExpr(SExpression::ATOM(s))), lexer)
+                }
             }
         }
         _ => {
@@ -148,7 +157,7 @@ fn parse_next<'a>(mut lexer: lexer::Lexer<'a>) -> (Result<LispExpr, SyntaxError>
 
 /// Parse a string into an Expr representing its abstract syntax tree.
 pub fn parse(input: &str) -> Result<LispExpr, SyntaxError> {
-    let lexemes = lex(input);
+    let lexemes = lex(input).peekable();
     let (result, lexer) = parse_next(lexemes);
     let remaining: Vec<lexer::Lexeme> = lexer.collect();
     match (&result, remaining.is_empty()) {
@@ -366,7 +375,7 @@ mod tests {
         assert_eq!(
             Result::Ok(LispExpr::MExpr(
                 String::from("atom"),
-                vec![LispExpr::SExpr(SExpression::ATOM(String::from("A")))]
+                vec![LispExpr::SExpr(SExpression::ATOM(String::from("A")))],
             )),
             actual
         );
@@ -381,8 +390,25 @@ mod tests {
                 String::from("atom"),
                 vec![LispExpr::SExpr(SExpression::PAIR(
                     Box::new(SExpression::ATOM(String::from("A"))),
-                    Box::new(SExpression::ATOM(String::from("B")))
-                ))]
+                    Box::new(SExpression::ATOM(String::from("B"))),
+                ))],
+            )),
+            actual
+        );
+    }
+
+    // Parse the second elementary m-expression, eq
+    // Note that unlike McCarthy we don't use semicolons to separate the arguments
+    #[test]
+    fn parse_mexpr_eq_of_atom_atom() {
+        let actual = parse("eq[A B]");
+        assert_eq!(
+            Result::Ok(LispExpr::MExpr(
+                String::from("eq"),
+                vec![
+                    LispExpr::SExpr(SExpression::ATOM(String::from("A"))),
+                    LispExpr::SExpr(SExpression::ATOM(String::from("B"))),
+                ],
             )),
             actual
         );
