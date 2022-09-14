@@ -77,7 +77,9 @@ mod tests {
 
     #[test]
     fn lexer_must_recognize_right_parenthesis() {
-        assert_eq!(Some(Lexeme::RPar), lex(")").next());
+        let mut lexer = lex(")");
+        assert_eq!(Some(Lexeme::RPar), lexer.next());
+        assert_eq!(None, lexer.next());
     }
 
     #[test]
