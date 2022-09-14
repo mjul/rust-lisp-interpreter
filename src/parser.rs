@@ -35,8 +35,10 @@ pub enum MExpression {
 /// A parsed Lisp expression. The AST is built from S-Expression primitives and M-Expressions (functions over S-Expressions).
 #[derive(Eq, PartialEq, Debug)]
 pub enum LispExpr {
+    /// A symbolic expression (S-Expression).
     SExpr(SExpression),
-    MExpr(MExpression),
+    /// An meta-expression (M-Expression) is a function name and its arguments.
+    MExpr(String, Vec<LispExpr>),
 }
 
 /// Syntax error
@@ -57,7 +59,7 @@ fn unparse_to(expr: &LispExpr, mut out: String) -> String {
             }
             _ => todo!("unparse for S-Expression not fully implemented"),
         },
-        LispExpr::MExpr(mexpr) => {
+        LispExpr::MExpr(_, _) => {
             todo!("unparse for M-Expressions not implemented");
         }
     }
@@ -98,28 +100,49 @@ fn parse_next<'a>(mut lexer: lexer::Lexer<'a>) -> (Result<LispExpr, SyntaxError>
             let end_par = lexer.next();
             match (left, right, end_par) {
                 (Result::Err(SyntaxError::EndOfFile(_)), _, _) => (
-                        Result::Err(SyntaxError::SExpressionExpected(String::from("Syntax error: Expected S-expression as first element of pair. Got end of file."))), lexer),
+                    Result::Err(SyntaxError::SExpressionExpected(String::from("Syntax error: Expected S-expression as first element of pair. Got end of file."))), lexer),
                 (Result::Err(_lerr), _, _) => (
-                        Result::Err(SyntaxError::SExpressionExpected(String::from("Syntax error: Expected S-expression as first element of pair."))), lexer),
+                    Result::Err(SyntaxError::SExpressionExpected(String::from("Syntax error: Expected S-expression as first element of pair."))), lexer),
                 (_, Result::Err(SyntaxError::InvalidCharacter(ch)), _) => (
-                        Result::Err(SyntaxError::SExpressionExpected(String::from(format!("Syntax error: Expected S-expression as second element of pair. Got invalid character: '{}'", ch)))), lexer),
+                    Result::Err(SyntaxError::SExpressionExpected(String::from(format!("Syntax error: Expected S-expression as second element of pair. Got invalid character: '{}'", ch)))), lexer),
                 (_, Result::Err(_rerr), _) => (
-                        Result::Err(SyntaxError::SExpressionExpected(String::from("Syntax error: Expected S-expression as second element of pair."))),
+                    Result::Err(SyntaxError::SExpressionExpected(String::from("Syntax error: Expected S-expression as second element of pair."))),
                     lexer),
                 (Result::Ok(LispExpr::SExpr(l)), Result::Ok(LispExpr::SExpr(r)), Some(lexer::Lexeme::RPar)) => (
-                        Result::Ok(LispExpr::SExpr(SExpression::PAIR(Box::new(l), Box::new(r)))),
+                    Result::Ok(LispExpr::SExpr(SExpression::PAIR(Box::new(l), Box::new(r)))),
                     lexer,
                 ),
                 (_, _, Some(l)) => (
-                        Result::Err(SyntaxError::MisplacedLexeme(String::from("Syntax error: Expected closing parenthesis after second element of pair."), l)), lexer),
+                    Result::Err(SyntaxError::MisplacedLexeme(String::from("Syntax error: Expected closing parenthesis after second element of pair."), l)), lexer),
                 (_, _, None) => (
-                        Result::Err(SyntaxError::EndOfFile(String::from("Syntax error: Expected closing parenthesis after second element of pair, got end of file."))), lexer),
+                    Result::Err(SyntaxError::EndOfFile(String::from("Syntax error: Expected closing parenthesis after second element of pair, got end of file."))), lexer),
             }
         }
         Some(lexer::Lexeme::AlphaNum(s)) => {
-            (Result::Ok(LispExpr::SExpr(SExpression::ATOM(s))), lexer)
-        },
-        _ => { todo!("not implemented yet"); }
+            match s.chars().next() {
+                Some(initial) if initial.is_lowercase() => {
+                    // M-Expression
+                    let lbra = lexer.next();
+                    let (first_inner, mut lexer) = parse_next(lexer);
+                    let rbra = lexer.next();
+                    match (lbra, first_inner, rbra) {
+                        (
+                            Some(lexer::Lexeme::LBracket),
+                            Result::Ok(first_arg),
+                            Some(lexer::Lexeme::RBracket),
+                        ) => {
+                            // single arg meta-function
+                            (Result::Ok(LispExpr::MExpr(s, vec![first_arg])), lexer)
+                        }
+                        _ => todo!("M-Expressions not fully implemented"),
+                    }
+                }
+                _ => (Result::Ok(LispExpr::SExpr(SExpression::ATOM(s))), lexer),
+            }
+        }
+        _ => {
+            todo!("not implemented yet");
+        }
     }
 }
 
@@ -240,7 +263,7 @@ mod tests {
         assert_eq!(
             Result::Err(SyntaxError::EndOfFileExpected(
                 String::from("Syntax error: Expected end of file."),
-                vec![lexer::Lexeme::RPar]
+                vec![lexer::Lexeme::RPar],
             )),
             actual
         );
@@ -279,7 +302,7 @@ mod tests {
         assert_eq!(
             Result::Ok(LispExpr::SExpr(SExpression::PAIR(
                 Box::new(SExpression::ATOM(String::from("A"))),
-                Box::new(SExpression::ATOM(String::from("B")))
+                Box::new(SExpression::ATOM(String::from("B"))),
             ))),
             actual
         );
@@ -293,9 +316,9 @@ mod tests {
             Result::Ok(LispExpr::SExpr(SExpression::PAIR(
                 Box::new(SExpression::PAIR(
                     Box::new(SExpression::ATOM(String::from("A"))),
-                    Box::new(SExpression::ATOM(String::from("B")))
+                    Box::new(SExpression::ATOM(String::from("B"))),
                 )),
-                Box::new(SExpression::ATOM(String::from("C")))
+                Box::new(SExpression::ATOM(String::from("C"))),
             ))),
             actual
         );
@@ -310,8 +333,8 @@ mod tests {
                 Box::new(SExpression::ATOM(String::from("A"))),
                 Box::new(SExpression::PAIR(
                     Box::new(SExpression::ATOM(String::from("B"))),
-                    Box::new(SExpression::ATOM(String::from("C")))
-                ))
+                    Box::new(SExpression::ATOM(String::from("C"))),
+                )),
             ),)),
             actual
         );
@@ -325,11 +348,11 @@ mod tests {
             Result::Ok(LispExpr::SExpr(SExpression::PAIR(
                 Box::new(SExpression::PAIR(
                     Box::new(SExpression::ATOM(String::from("A"))),
-                    Box::new(SExpression::ATOM(String::from("B")))
+                    Box::new(SExpression::ATOM(String::from("B"))),
                 )),
                 Box::new(SExpression::PAIR(
                     Box::new(SExpression::ATOM(String::from("C"))),
-                    Box::new(SExpression::ATOM(String::from("D")))
+                    Box::new(SExpression::ATOM(String::from("D"))),
                 )),
             ))),
             actual
@@ -338,27 +361,29 @@ mod tests {
 
     // Parse the first elementary m-expression, atom (atom variant)
     #[test]
-    #[ignore="not implemented"]
     fn parse_mexpr_atom_of_atom() {
         let actual = parse("atom[A]");
         assert_eq!(
-            Result::Ok(LispExpr::MExpr(MExpression::ATOM(SExpression::ATOM(
-                String::from("A")
-            )))),
+            Result::Ok(LispExpr::MExpr(
+                String::from("atom"),
+                vec![LispExpr::SExpr(SExpression::ATOM(String::from("A")))]
+            )),
             actual
         );
     }
 
     // Parse the first elementary m-expression, atom (pair variant)
     #[test]
-    #[ignore="not implemented"]
     fn parse_mexpr_atom_of_pair() {
         let actual = parse("atom[(A B)]");
         assert_eq!(
-            Result::Ok(LispExpr::MExpr(MExpression::ATOM(SExpression::PAIR(
-                Box::new(SExpression::ATOM(String::from("A"))),
-                Box::new(SExpression::ATOM(String::from("B")))
-            )))),
+            Result::Ok(LispExpr::MExpr(
+                String::from("atom"),
+                vec![LispExpr::SExpr(SExpression::PAIR(
+                    Box::new(SExpression::ATOM(String::from("A"))),
+                    Box::new(SExpression::ATOM(String::from("B")))
+                ))]
+            )),
             actual
         );
     }
