@@ -1,5 +1,6 @@
 use crate::lexer::{self, lex};
 
+/// An S-Expressions is a Symbolic Expression.
 #[derive(Eq, PartialEq, Debug)]
 pub enum SExpression {
     /// An Atom is called an "atomic symbol" in McCarthy's 1960 article.
@@ -7,6 +8,17 @@ pub enum SExpression {
     ATOM(String),
     /// A Pair is a dotted pair in McCarthy's article. We use spaces to separate the elements rather than a dot.
     PAIR(Box<SExpression>, Box<SExpression>),
+}
+
+/// An M-Expression is a meta-expression over S-Expressions.
+/// McCarthy used a special syntax for these, *e.g.* `car[x]` or `car[cons[(A · B); x]]`.
+/// Later Lisps generally use the S-expression syntax for theses, e.g. `(car x)` and `(car (cons ((A B) x)))`.
+#[derive(Eq, PartialEq, Debug)]
+pub enum MExpression {
+    /// The `atom`  predicate returns true (`T`) or false (`T`) dependening on whether `x` is an atomic symbol or not.
+    /// McCarthy: `atom[x]` has the value of `T` or `F` according to whether `x` is an atomic symbol. Thus `atom [X] = T` and `atom [(X · A)] = F`.
+    /// Later Lisps often add a trailing `p` or a question mark to predicate functions, *e.g.* `ATOMP` or `atom?`
+    ATOM(SExpression),
 
     /// CAR is a homomorphic function on S-expressions, itself an S-expression. It evaluates to the first element of a pair.
     CAR(Box<SExpression>),
@@ -20,6 +32,13 @@ pub enum SExpression {
     QUOTE(Box<SExpression>),
 }
 
+/// A parsed Lisp expression. The AST is built from S-Expression primitives and M-Expressions (functions over S-Expressions).
+#[derive(Eq, PartialEq, Debug)]
+pub enum LispExpr {
+    SExpr(SExpression),
+    MExpr(MExpression),
+}
+
 /// Syntax error
 #[derive(Eq, PartialEq, Debug)]
 pub enum SyntaxError {
@@ -30,27 +49,33 @@ pub enum SyntaxError {
     SExpressionExpected(String),
 }
 
-fn unparse_to(expr: &SExpression, mut out: String) -> String {
+fn unparse_to(expr: &LispExpr, mut out: String) -> String {
     match expr {
-        SExpression::ATOM(s) => {
-            out.push_str(s);
+        LispExpr::SExpr(sexpr) => match sexpr {
+            SExpression::ATOM(s) => {
+                out.push_str(s);
+            }
+            _ => todo!("unparse for S-Expression not fully implemented"),
+        },
+        LispExpr::MExpr(mexpr) => {
+            todo!("unparse for M-Expressions not implemented");
         }
-        SExpression::QUOTE(inner) => {
-            out.push_str("'");
-            out.push_str(&unparse(inner));
-        }
-        _ => out.push_str("not implemented"),
     }
     out
 }
 
-/// Convert an abstract syntax tree (AST) into a Lisp expression.
-pub fn unparse(expr: &SExpression) -> String {
+//        MExpression::QUOTE(inner) => {
+//            out.push_str("'");
+//            out.push_str(&unparse(inner));
+//        }
+
+/// Convert an abstract syntax tree (AST) into its corresponding Lisp code as a string.
+pub fn unparse(expr: &LispExpr) -> String {
     let result = unparse_to(expr, String::from(""));
     result
 }
 
-fn parse_next<'a>(mut lexer: lexer::Lexer<'a>) -> (Result<SExpression, SyntaxError>, lexer::Lexer) {
+fn parse_next<'a>(mut lexer: lexer::Lexer<'a>) -> (Result<LispExpr, SyntaxError>, lexer::Lexer) {
     let l = lexer.next();
     match l {
         None => (
@@ -81,8 +106,8 @@ fn parse_next<'a>(mut lexer: lexer::Lexer<'a>) -> (Result<SExpression, SyntaxErr
                 (_, Result::Err(_rerr), _) => (
                         Result::Err(SyntaxError::SExpressionExpected(String::from("Syntax error: Expected S-expression as second element of pair."))),
                     lexer),
-                (Result::Ok(l), Result::Ok(r), Some(lexer::Lexeme::RPar)) => (
-                    Result::Ok(SExpression::PAIR(Box::new(l), Box::new(r))),
+                (Result::Ok(LispExpr::SExpr(l)), Result::Ok(LispExpr::SExpr(r)), Some(lexer::Lexeme::RPar)) => (
+                        Result::Ok(LispExpr::SExpr(SExpression::PAIR(Box::new(l), Box::new(r)))),
                     lexer,
                 ),
                 (_, _, Some(l)) => (
@@ -91,12 +116,14 @@ fn parse_next<'a>(mut lexer: lexer::Lexer<'a>) -> (Result<SExpression, SyntaxErr
                         Result::Err(SyntaxError::EndOfFile(String::from("Syntax error: Expected closing parenthesis after second element of pair, got end of file."))), lexer),
             }
         }
-        Some(lexer::Lexeme::AlphaNum(s)) => (Result::Ok(SExpression::ATOM(s)), lexer),
+        Some(lexer::Lexeme::AlphaNum(s)) => {
+            (Result::Ok(LispExpr::SExpr(SExpression::ATOM(s))), lexer)
+        }
     }
 }
 
-/// Parse a string with an S-Expression into an S-Expression abstract syntax tree.
-pub fn parse(input: &str) -> Result<SExpression, SyntaxError> {
+/// Parse a string into an Expr representing its abstract syntax tree.
+pub fn parse(input: &str) -> Result<LispExpr, SyntaxError> {
     let lexemes = lex(input);
     let (result, lexer) = parse_next(lexemes);
     let remaining: Vec<lexer::Lexeme> = lexer.collect();
@@ -116,47 +143,61 @@ mod tests {
 
     #[test]
     fn unparse_atom_string() {
-        let expr = SExpression::ATOM(String::from("FOO"));
+        let expr = LispExpr::SExpr(SExpression::ATOM(String::from("FOO")));
         let actual = unparse(&expr);
         assert_eq!("FOO", actual);
     }
 
     #[test]
     fn unparse_atom_string_number() {
-        let expr = SExpression::ATOM(String::from("FOO1"));
+        let expr = LispExpr::SExpr(SExpression::ATOM(String::from("FOO1")));
         let actual = unparse(&expr);
         assert_eq!("FOO1", actual);
     }
 
-    #[test]
-    fn unparse_quoted_expr() {
-        let expr = SExpression::QUOTE(Box::new(SExpression::ATOM(String::from("foo"))));
-        let actual = unparse(&expr);
-        assert_eq!("'foo", actual);
-    }
+    /*
+        #[test]
+        fn unparse_quoted_expr() {
+            let expr = SExpression::QUOTE(Box::new(SExpression::ATOM(String::from("foo"))));
+            let actual = unparse(&expr);
+            assert_eq!("'foo", actual);
+        }
+    */
 
     #[test]
     fn parse_atom() {
         let actual = parse("AB");
-        assert_eq!(Result::Ok(SExpression::ATOM(String::from("AB"))), actual);
+        assert_eq!(
+            Result::Ok(LispExpr::SExpr(SExpression::ATOM(String::from("AB")))),
+            actual
+        );
     }
 
     #[test]
     fn parse_atom_string() {
         let actual = parse("AB");
-        assert_eq!(Result::Ok(SExpression::ATOM(String::from("AB"))), actual);
+        assert_eq!(
+            Result::Ok(LispExpr::SExpr(SExpression::ATOM(String::from("AB")))),
+            actual
+        );
     }
 
     #[test]
     fn parse_atom_string_and_number() {
         let actual = parse("A1");
-        assert_eq!(Result::Ok(SExpression::ATOM(String::from("A1"))), actual);
+        assert_eq!(
+            Result::Ok(LispExpr::SExpr(SExpression::ATOM(String::from("A1")))),
+            actual
+        );
     }
 
     #[test]
     fn parse_atom_with_trailing_whitespace() {
         let actual = parse("AB  ");
-        assert_eq!(Result::Ok(SExpression::ATOM(String::from("AB"))), actual);
+        assert_eq!(
+            Result::Ok(LispExpr::SExpr(SExpression::ATOM(String::from("AB")))),
+            actual
+        );
     }
 
     #[test]
@@ -235,10 +276,10 @@ mod tests {
     fn parse_pair_of_atom_atom() {
         let actual = parse("(A B)");
         assert_eq!(
-            Result::Ok(SExpression::PAIR(
+            Result::Ok(LispExpr::SExpr(SExpression::PAIR(
                 Box::new(SExpression::ATOM(String::from("A"))),
                 Box::new(SExpression::ATOM(String::from("B")))
-            )),
+            ))),
             actual
         );
     }
@@ -248,13 +289,13 @@ mod tests {
     fn parse_pair_of_pair_atom() {
         let actual = parse("((A B) C)");
         assert_eq!(
-            Result::Ok(SExpression::PAIR(
+            Result::Ok(LispExpr::SExpr(SExpression::PAIR(
                 Box::new(SExpression::PAIR(
                     Box::new(SExpression::ATOM(String::from("A"))),
                     Box::new(SExpression::ATOM(String::from("B")))
                 )),
                 Box::new(SExpression::ATOM(String::from("C")))
-            )),
+            ))),
             actual
         );
     }
@@ -264,13 +305,13 @@ mod tests {
     fn parse_pair_of_atom_pair() {
         let actual = parse("(A (B C))");
         assert_eq!(
-            Result::Ok(SExpression::PAIR(
+            Result::Ok(LispExpr::SExpr(SExpression::PAIR(
                 Box::new(SExpression::ATOM(String::from("A"))),
                 Box::new(SExpression::PAIR(
                     Box::new(SExpression::ATOM(String::from("B"))),
                     Box::new(SExpression::ATOM(String::from("C")))
-                )),
-            )),
+                ))
+            ),)),
             actual
         );
     }
@@ -280,7 +321,7 @@ mod tests {
     fn parse_pair_of_pair_pair() {
         let actual = parse("((A B) (C D))");
         assert_eq!(
-            Result::Ok(SExpression::PAIR(
+            Result::Ok(LispExpr::SExpr(SExpression::PAIR(
                 Box::new(SExpression::PAIR(
                     Box::new(SExpression::ATOM(String::from("A"))),
                     Box::new(SExpression::ATOM(String::from("B")))
@@ -289,7 +330,34 @@ mod tests {
                     Box::new(SExpression::ATOM(String::from("C"))),
                     Box::new(SExpression::ATOM(String::from("D")))
                 )),
-            )),
+            ))),
+            actual
+        );
+    }
+
+    // Parse the first elementary m-expression, atom (atom variant)
+    #[test]
+    #[ignore="not implemented"]
+    fn parse_mexpr_atom_of_atom() {
+        let actual = parse("atom[A]");
+        assert_eq!(
+            Result::Ok(LispExpr::MExpr(MExpression::ATOM(SExpression::ATOM(
+                String::from("A")
+            )))),
+            actual
+        );
+    }
+
+    // Parse the first elementary m-expression, atom (pair variant)
+    #[test]
+    #[ignore="not implemented"]
+    fn parse_mexpr_atom_of_pair() {
+        let actual = parse("atom[(A B)]");
+        assert_eq!(
+            Result::Ok(LispExpr::MExpr(MExpression::ATOM(SExpression::PAIR(
+                Box::new(SExpression::ATOM(String::from("A"))),
+                Box::new(SExpression::ATOM(String::from("B")))
+            )))),
             actual
         );
     }
