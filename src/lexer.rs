@@ -41,13 +41,31 @@ impl<'a> Lexer<'a> {
     fn lex_next(&mut self) -> Option<Lexeme> {
         if let Some(&ch) = self.iter.peek() {
             match ch {
-                _ if ch.is_whitespace() => { self.iter.next(); self.lex_next() },
-                '(' => { self.iter.next(); Some(Lexeme::LPar) },
-                ')' => { self.iter.next(); Some(Lexeme::RPar) },
-                '[' => { self.iter.next(); Some(Lexeme::LBracket) },
-                ']' => { self.iter.next(); Some(Lexeme::RBracket) },
+                _ if ch.is_whitespace() => {
+                    self.iter.next();
+                    self.lex_next()
+                }
+                '(' => {
+                    self.iter.next();
+                    Some(Lexeme::LPar)
+                }
+                ')' => {
+                    self.iter.next();
+                    Some(Lexeme::RPar)
+                }
+                '[' => {
+                    self.iter.next();
+                    Some(Lexeme::LBracket)
+                }
+                ']' => {
+                    self.iter.next();
+                    Some(Lexeme::RBracket)
+                }
                 _ if ch.is_alphabetic() => self.lex_alphanumeric(),
-                _ => { self.iter.next(); Some(Lexeme::Invalid(ch)) },
+                _ => {
+                    self.iter.next();
+                    Some(Lexeme::Invalid(ch))
+                }
             }
         } else {
             None
@@ -99,7 +117,6 @@ mod tests {
         assert_eq!(Some(Lexeme::RBracket), lexer.next());
         assert_eq!(None, lexer.next());
     }
-
 
     #[test]
     fn lexer_must_ignore_whitespace_before_lexeme() {
@@ -173,5 +190,4 @@ mod tests {
         assert_eq!(Some(Lexeme::Invalid('{')), sut.next());
         assert_eq!(None, sut.next());
     }
-
 }
