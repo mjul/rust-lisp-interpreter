@@ -17,11 +17,6 @@ pub struct Lexer<'a> {
 }
 
 impl<'a> Lexer<'a> {
-    fn from(input: &'a str) -> Self {
-        let iter = input.chars().peekable();
-        Lexer { iter: iter }
-    }
-
     fn lex_alphanumeric(&mut self) -> Option<Lexeme> {
         let mut result = String::new();
         while let Some(&ch) = self.iter.peek() {
@@ -70,6 +65,13 @@ impl<'a> Lexer<'a> {
         } else {
             None
         }
+    }
+}
+
+impl<'a> From<&'a str> for Lexer<'a> {
+    fn from(input: &'a str) -> Self {
+        let iter = input.chars().peekable();
+        Lexer { iter: iter }
     }
 }
 
