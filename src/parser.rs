@@ -1,7 +1,7 @@
 use crate::lexer::{self, lex};
 
 /// An S-Expressions is a Symbolic Expression.
-#[derive(Eq, PartialEq, Debug)]
+#[derive(Eq, PartialEq, Debug, Clone)]
 pub enum SExpression {
     /// An Atom is called an "atomic symbol" in McCarthy's 1960 article.
     /// Unlike that article we do not allow spaces in atom names.
@@ -85,7 +85,7 @@ type PeekableLexer<'a> = std::iter::Peekable<lexer::Lexer<'a>>;
 /// Parse until the sentinel lexeme is found.
 /// Consumes the sentinel.
 /// Returns the parsed expressions and the next state of the lexer.
-fn parse_until<'a>(sentinel: &lexer::Lexeme, lexer : PeekableLexer<'a>) -> (Result<Vec<LispExpr>, SyntaxError>, PeekableLexer<'a>) {
+fn parse_until<'a>(sentinel: &lexer::Lexeme, lexer: PeekableLexer<'a>) -> (Result<Vec<LispExpr>, SyntaxError>, PeekableLexer<'a>) {
     let mut result = vec![];
     let mut l = lexer;
     while l.next_if_eq(sentinel).is_none() {
@@ -114,6 +114,50 @@ fn parse_until<'a>(sentinel: &lexer::Lexeme, lexer : PeekableLexer<'a>) -> (Resu
     (Ok(result), l)
 }
 
+/// Parse an S-Expression from the lexer.
+fn parse_sexpr<'a>(mut lexer: PeekableLexer<'a>) -> (Result<SExpression, SyntaxError>, PeekableLexer<'a>)
+{
+    match lexer.next() {
+        None => (
+            Err(SyntaxError::EndOfFile(String::from(
+                "Syntax error: Expected S-expression, got end of file.",
+            ))),
+            lexer,
+        ),
+        Some(lexer::Lexeme::Invalid(ch)) => (Err(SyntaxError::InvalidCharacter(ch)), lexer),
+        Some(lexer::Lexeme::RPar) => (
+            Err(SyntaxError::MisplacedLexeme(
+                String::from("Unmatched closing parenthesis."),
+                lexer::Lexeme::RPar,
+            )),
+            lexer,
+        ),
+        Some(lexer::Lexeme::LPar) => {
+            let mut inners = vec![];
+            while lexer.next_if_eq(&lexer::Lexeme::RPar).is_none() {
+                let (result, l_next) = parse_sexpr(lexer);
+                lexer = l_next;
+                match result {
+                    Ok(sexpr) => { inners.push(sexpr); }
+                    Err(_) => { todo!("error in S-expression"); }
+                }
+            }
+            match inners.len() {
+                2 => {
+                    (Ok(SExpression::PAIR(Box::new(inners[0].clone()), Box::new(inners[1].clone()))), lexer)
+                }
+                _ => {
+                    todo!("malformed S-Expression")
+                }
+            }
+        }
+        Some(lexer::Lexeme::AlphaNum(s)) => {
+            (Ok(SExpression::ATOM(String::from(s))), lexer)
+        }
+        _ => { todo!("invalid token in S-Expression") }
+    }
+}
+
 fn parse_next<'a>(
     mut lexer: PeekableLexer<'a>,
 ) -> (
@@ -137,27 +181,32 @@ fn parse_next<'a>(
             lexer,
         ),
         Some(lexer::Lexeme::LPar) => {
-            let (left, lexer) = parse_next(lexer);
-            let (right, mut lexer) = parse_next(lexer);
-            let end_par = lexer.next();
-            match (left, right, end_par) {
-                (Err(SyntaxError::EndOfFile(_)), _, _) => (
+            let (left, lexer) = parse_sexpr(lexer);
+            match left {
+                Err(SyntaxError::EndOfFile(_)) => (
                     Err(SyntaxError::SExpressionExpected(String::from("Syntax error: Expected S-expression as first element of pair. Got end of file."))), lexer),
-                (Err(_lerr), _, _) => (
+                Err(_lerr) => (
                     Err(SyntaxError::SExpressionExpected(String::from("Syntax error: Expected S-expression as first element of pair."))), lexer),
-                (_, Err(SyntaxError::InvalidCharacter(ch)), _) => (
-                    Err(SyntaxError::SExpressionExpected(String::from(format!("Syntax error: Expected S-expression as second element of pair. Got invalid character: '{}'", ch)))), lexer),
-                (_, Err(_rerr), _) => (
-                    Err(SyntaxError::SExpressionExpected(String::from("Syntax error: Expected S-expression as second element of pair."))),
-                    lexer),
-                (Ok(LispExpr::SExpr(l)), Ok(LispExpr::SExpr(r)), Some(lexer::Lexeme::RPar)) => (
-                    Ok(LispExpr::SExpr(SExpression::PAIR(Box::new(l), Box::new(r)))),
-                    lexer,
-                ),
-                (_, _, Some(l)) => (
-                    Err(SyntaxError::MisplacedLexeme(String::from("Syntax error: Expected closing parenthesis after second element of pair."), l)), lexer),
-                (_, _, None) => (
-                    Err(SyntaxError::EndOfFile(String::from("Syntax error: Expected closing parenthesis after second element of pair, got end of file."))), lexer),
+                Ok(l) => {
+                    let (right, mut lexer) = parse_sexpr(lexer);
+                    let end_par = lexer.next();
+                    // TODO: clean up or move these patterns to parse_sexpr
+                    match (right, end_par) {
+                        (Err(SyntaxError::InvalidCharacter(ch)), _) => (
+                            Err(SyntaxError::SExpressionExpected(String::from(format!("Syntax error: Expected S-expression as second element of pair. Got invalid character: '{}'", ch)))), lexer),
+                        (Err(_rerr), _) => (
+                            Err(SyntaxError::SExpressionExpected(String::from("Syntax error: Expected S-expression as second element of pair."))),
+                            lexer),
+                        (Ok(r), Some(lexer::Lexeme::RPar)) => (
+                            Ok(LispExpr::SExpr(SExpression::PAIR(Box::new(l), Box::new(r)))),
+                            lexer,
+                        ),
+                        (_, Some(l)) => (
+                            Err(SyntaxError::MisplacedLexeme(String::from("Syntax error: Expected closing parenthesis after second element of pair."), l.clone())), lexer),
+                        (_, None) => (
+                            Err(SyntaxError::EndOfFile(String::from("Syntax error: Expected closing parenthesis after second element of pair, got end of file."))), lexer),
+                    }
+                }
             }
         }
         Some(lexer::Lexeme::AlphaNum(s)) => {
@@ -173,11 +222,11 @@ fn parse_next<'a>(
                                     match **inner {
                                         SyntaxError::EndOfFile(_) => ("Syntax error in M-Expression: Expected S-Expression or closing bracket. Got end of file.",
                                                                       (**inner).clone()
-                                                                       //SyntaxError::EndOfFile(String::from("Syntax error: unexpected end of file."))
+                                                                      //SyntaxError::EndOfFile(String::from("Syntax error: unexpected end of file."))
                                         ),
                                         _ => ("Syntax error in M-Expression", err)
                                     }
-                                },
+                                }
                                 _ => ("Syntax error in M-Expression", err)
                             };
                             return (
@@ -189,7 +238,7 @@ fn parse_next<'a>(
                             );
                         }
                     }
-                },
+                }
                 None => {
                     // No bracket following alphanumeric string => S-Expression
                     (Ok(LispExpr::SExpr(SExpression::ATOM(s))), lexer)
