@@ -49,6 +49,7 @@ pub enum SyntaxError {
     InvalidCharacter(char),
     MisplacedLexeme(String, lexer::Lexeme),
     SExpressionExpected(String),
+    MalformedMExpression(String, Box<SyntaxError>),
 }
 
 fn unparse_to(expr: &LispExpr, mut out: String) -> String {
@@ -136,8 +137,18 @@ fn parse_next<'a>(
                             Ok(a) => {
                                 args.push(a);
                             }
-                            _ => {
-                                todo!("what about errors");
+                            Err(err) => {
+                                let msg = match err {
+                                    SyntaxError::EndOfFile(_) => "Syntax error in M-Expression: Expected S-Expression or closing bracket. Got end of file.",
+                                    _ => "Syntax error in M-Expression"
+                                };
+                                return (
+                                    Err(SyntaxError::MalformedMExpression(
+                                        String::from(msg),
+                                        Box::new(err),
+                                    )),
+                                    lexer,
+                                );
                             }
                         }
                     }
@@ -410,6 +421,18 @@ mod tests {
                     LispExpr::SExpr(SExpression::ATOM(String::from("B"))),
                 ],
             )),
+            actual
+        );
+    }
+
+    // Parse the second elementary m-expression, eq
+    // Note that unlike McCarthy we don't use semicolons to separate the arguments
+    #[test]
+    fn parse_mexpr_missing_close_bracket() {
+        let actual = parse("eq[A B");
+        assert_eq!(
+            Err(SyntaxError::MalformedMExpression(String::from("Syntax error in M-Expression: Expected S-Expression or closing bracket. Got end of file."),
+                                                  Box::new(SyntaxError::EndOfFile(String::from("Syntax error: Expected S-expression, got end of file."))))),
             actual
         );
     }
