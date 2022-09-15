@@ -1,6 +1,6 @@
 /// Lexer for Lisp
 /// Very simple since we have only atoms (alphanumeric) and parenthesis.
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub enum Lexeme {
     LPar,
     RPar,

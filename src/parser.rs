@@ -42,7 +42,7 @@ pub enum LispExpr {
 }
 
 /// Syntax error
-#[derive(Eq, PartialEq, Debug)]
+#[derive(Eq, PartialEq, Debug, Clone)]
 pub enum SyntaxError {
     EndOfFile(String),
     EndOfFileExpected(String, Vec<lexer::Lexeme>),
@@ -50,6 +50,7 @@ pub enum SyntaxError {
     MisplacedLexeme(String, lexer::Lexeme),
     SExpressionExpected(String),
     MalformedMExpression(String, Box<SyntaxError>),
+    MalformedListExpression(String, Box<SyntaxError>),
 }
 
 fn unparse_to(expr: &LispExpr, mut out: String) -> String {
@@ -78,11 +79,46 @@ pub fn unparse(expr: &LispExpr) -> String {
     result
 }
 
+/// Alias for the lexer
+type PeekableLexer<'a> = std::iter::Peekable<lexer::Lexer<'a>>;
+
+/// Parse until the sentinel lexeme is found.
+/// Consumes the sentinel.
+/// Returns the parsed expressions and the next state of the lexer.
+fn parse_until<'a>(sentinel: &lexer::Lexeme, lexer : PeekableLexer<'a>) -> (Result<Vec<LispExpr>, SyntaxError>, PeekableLexer<'a>) {
+    let mut result = vec![];
+    let mut l = lexer;
+    while l.next_if_eq(sentinel).is_none() {
+        // sentinel lexeme not reached, capture all arguments
+        let (arg, l_next) = parse_next(l);
+        l = l_next;
+        match arg {
+            Ok(a) => {
+                result.push(a);
+            }
+            Err(err) => {
+                let msg = match err {
+                    SyntaxError::EndOfFile(_) => "Syntax error in expression. Expected expression or closing lexeme. Got end of file.",
+                    _ => "Syntax error in expression"
+                };
+                return (
+                    Err(SyntaxError::MalformedListExpression(
+                        String::from(msg),
+                        Box::new(err),
+                    )),
+                    l,
+                );
+            }
+        }
+    }
+    (Ok(result), l)
+}
+
 fn parse_next<'a>(
-    mut lexer: std::iter::Peekable<lexer::Lexer<'a>>,
+    mut lexer: PeekableLexer<'a>,
 ) -> (
     Result<LispExpr, SyntaxError>,
-    std::iter::Peekable<lexer::Lexer<'a>>,
+    PeekableLexer<'a>,
 ) {
     let l = lexer.next();
     match l {
@@ -128,32 +164,32 @@ fn parse_next<'a>(
             match lexer.next_if_eq(&lexer::Lexeme::LBracket) {
                 Some(_) => {
                     // name then left bracket => M-Expression
-                    let mut args = vec![];
-                    while lexer.next_if_eq(&lexer::Lexeme::RBracket).is_none() {
-                        // end bracket not reached, capture all arguments
-                        let (arg, l_next) = parse_next(lexer);
-                        lexer = l_next;
-                        match arg {
-                            Ok(a) => {
-                                args.push(a);
-                            }
-                            Err(err) => {
-                                let msg = match err {
-                                    SyntaxError::EndOfFile(_) => "Syntax error in M-Expression: Expected S-Expression or closing bracket. Got end of file.",
-                                    _ => "Syntax error in M-Expression"
-                                };
-                                return (
-                                    Err(SyntaxError::MalformedMExpression(
-                                        String::from(msg),
-                                        Box::new(err),
-                                    )),
-                                    lexer,
-                                );
-                            }
+                    let (args, l_next) = parse_until(&lexer::Lexeme::RBracket, lexer);
+                    match args {
+                        Ok(exprs) => (Ok(LispExpr::MExpr(s, exprs)), l_next),
+                        Err(err) => {
+                            let (msg, cause) = match &err {
+                                SyntaxError::MalformedListExpression(_, inner) => {
+                                    match **inner {
+                                        SyntaxError::EndOfFile(_) => ("Syntax error in M-Expression: Expected S-Expression or closing bracket. Got end of file.",
+                                                                      (**inner).clone()
+                                                                       //SyntaxError::EndOfFile(String::from("Syntax error: unexpected end of file."))
+                                        ),
+                                        _ => ("Syntax error in M-Expression", err)
+                                    }
+                                },
+                                _ => ("Syntax error in M-Expression", err)
+                            };
+                            return (
+                                Err(SyntaxError::MalformedMExpression(
+                                    String::from(msg),
+                                    Box::new(cause),
+                                )),
+                                l_next,
+                            );
                         }
                     }
-                    (Ok(LispExpr::MExpr(s, args)), lexer)
-                }
+                },
                 None => {
                     // No bracket following alphanumeric string => S-Expression
                     (Ok(LispExpr::SExpr(SExpression::ATOM(s))), lexer)
@@ -355,7 +391,7 @@ mod tests {
                     Box::new(SExpression::ATOM(String::from("B"))),
                     Box::new(SExpression::ATOM(String::from("C"))),
                 )),
-            ),)),
+            ), )),
             actual
         );
     }
@@ -425,8 +461,7 @@ mod tests {
         );
     }
 
-    // Parse the second elementary m-expression, eq
-    // Note that unlike McCarthy we don't use semicolons to separate the arguments
+    // Test the error handling for malformed M-Expressions
     #[test]
     fn parse_mexpr_missing_close_bracket() {
         let actual = parse("eq[A B");
