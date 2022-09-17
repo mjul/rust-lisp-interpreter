@@ -60,9 +60,9 @@ pub enum LispExpr {
 #[derive(Eq, PartialEq, Debug, Clone)]
 pub enum SyntaxError {
     UnexpectedEndOfFile(String),
-    EndOfFileExpected(String, Vec<lexer::Lexeme>),
+    EndOfFileExpected(String, Vec<lexer::Token>),
     InvalidCharacter(char),
-    MisplacedLexeme(String, lexer::Lexeme),
+    MisplacedLexeme(String, lexer::Token),
     SExpressionExpected(String),
     MalformedSExpression(String, Box<SyntaxError>),
     MalformedMExpression(String, Box<SyntaxError>),
@@ -102,7 +102,7 @@ type PeekableLexer<'a> = std::iter::Peekable<lexer::Lexer<'a>>;
 /// Consumes the sentinel.
 /// Returns the parsed expressions and the next state of the lexer.
 fn parse_until<'a>(
-    sentinel: &lexer::Lexeme,
+    sentinel: &lexer::Token,
     lexer: PeekableLexer<'a>,
 ) -> (Result<Vec<LispExpr>, SyntaxError>, PeekableLexer<'a>) {
     let mut result = vec![];
@@ -134,10 +134,10 @@ fn parse_until<'a>(
 }
 
 /// Determine if next lexeme is the beginning of an S-Expression.
-fn is_beginning_of_sexpr(lexeme: Option<&lexer::Lexeme>) -> bool {
+fn is_beginning_of_sexpr(lexeme: Option<&lexer::Token>) -> bool {
     match lexeme {
-        Some(lexer::Lexeme::AlphaNum(_)) => true,
-        Some(lexer::Lexeme::LPar) => true,
+        Some(lexer::Token::AlphaNum(_)) => true,
+        Some(lexer::Token::LPar) => true,
         _ => false,
     }
 }
@@ -153,15 +153,15 @@ fn parse_sexpr<'a>(
             ))),
             lexer,
         ),
-        Some(lexer::Lexeme::Invalid(ch)) => (Err(SyntaxError::InvalidCharacter(ch)), lexer),
-        Some(lexer::Lexeme::RPar) => (
+        Some(lexer::Token::Invalid(ch)) => (Err(SyntaxError::InvalidCharacter(ch)), lexer),
+        Some(lexer::Token::RPar) => (
             Err(SyntaxError::MisplacedLexeme(
                 String::from("Unmatched closing parenthesis."),
-                lexer::Lexeme::RPar,
+                lexer::Token::RPar,
             )),
             lexer,
         ),
-        Some(lexer::Lexeme::LPar) => {
+        Some(lexer::Token::LPar) => {
             let mut inners = vec![];
             while is_beginning_of_sexpr(lexer.peek()) {
                 let (result, l_next) = parse_sexpr(lexer);
@@ -177,7 +177,7 @@ fn parse_sexpr<'a>(
             }
             let closing_par = lexer.next();
             match closing_par {
-                Some(lexer::Lexeme::RPar) => {
+                Some(lexer::Token::RPar) => {
                     match inners.len() {
                         1 => {
                             // Shorthand (m) => (m, NIL)
@@ -219,7 +219,7 @@ fn parse_sexpr<'a>(
                 ),
             }
         }
-        Some(lexer::Lexeme::AlphaNum(s)) => (Ok(SExpression::ATOM(String::from(s))), lexer),
+        Some(lexer::Token::AlphaNum(s)) => (Ok(SExpression::ATOM(String::from(s))), lexer),
         _ => {
             todo!("invalid token in S-Expression")
         }
@@ -237,15 +237,15 @@ fn parse_next<'a>(
             ))),
             lexer,
         ),
-        Some(lexer::Lexeme::Invalid(ch)) => (Err(SyntaxError::InvalidCharacter(ch)), lexer),
-        Some(lexer::Lexeme::RPar) => (
+        Some(lexer::Token::Invalid(ch)) => (Err(SyntaxError::InvalidCharacter(ch)), lexer),
+        Some(lexer::Token::RPar) => (
             Err(SyntaxError::MisplacedLexeme(
                 String::from("Unmatched closing parenthesis."),
-                lexer::Lexeme::RPar,
+                lexer::Token::RPar,
             )),
             lexer,
         ),
-        Some(lexer::Lexeme::LPar) => {
+        Some(lexer::Token::LPar) => {
             let (left, mut lexer) = parse_sexpr(lexer);
             match left {
                 Err(SyntaxError::UnexpectedEndOfFile(_)) => (
@@ -262,7 +262,7 @@ fn parse_next<'a>(
                         (Err(_rerr), _) => (
                             Err(SyntaxError::SExpressionExpected(String::from("Syntax error: Expected S-expression as second element of pair."))),
                             lexer),
-                        (Ok(r), Some(lexer::Lexeme::RPar)) => (
+                        (Ok(r), Some(lexer::Token::RPar)) => (
                             Ok(LispExpr::SExpr(SExpression::PAIR(Box::new(l), Box::new(r)))),
                             lexer,
                         ),
@@ -274,11 +274,11 @@ fn parse_next<'a>(
                 }
             }
         }
-        Some(lexer::Lexeme::AlphaNum(s)) => {
-            match lexer.next_if_eq(&lexer::Lexeme::LBracket) {
+        Some(lexer::Token::AlphaNum(s)) => {
+            match lexer.next_if_eq(&lexer::Token::LBracket) {
                 Some(_) => {
                     // name then left bracket => M-Expression
-                    let (args, l_next) = parse_until(&lexer::Lexeme::RBracket, lexer);
+                    let (args, l_next) = parse_until(&lexer::Token::RBracket, lexer);
                     match args {
                         Ok(exprs) => (Ok(LispExpr::MExpr(s, exprs)), l_next),
                         Err(err) => {
@@ -320,7 +320,7 @@ fn parse_next<'a>(
 pub fn parse(input: &str) -> Result<LispExpr, SyntaxError> {
     let lexemes = lex(input).peekable();
     let (result, lexer) = parse_next(lexemes);
-    let remaining: Vec<lexer::Lexeme> = lexer.collect();
+    let remaining: Vec<lexer::Token> = lexer.collect();
     match (&result, remaining.is_empty()) {
         (Err(_), _) => result,
         (Ok(_), true) => result,
@@ -360,19 +360,19 @@ mod tests {
 
     #[test]
     fn is_beginning_of_sexpr_is_true_for_alpha_and_left_paren() {
-        assert_eq!(true, is_beginning_of_sexpr(Some(&lexer::Lexeme::LPar)));
+        assert_eq!(true, is_beginning_of_sexpr(Some(&lexer::Token::LPar)));
         assert_eq!(
             true,
-            is_beginning_of_sexpr(Some(&lexer::Lexeme::AlphaNum(String::from("AB"))))
+            is_beginning_of_sexpr(Some(&lexer::Token::AlphaNum(String::from("AB"))))
         );
     }
 
     #[test]
     fn is_beginning_of_sexpr_is_false_for_others() {
-        assert_eq!(false, is_beginning_of_sexpr(Some(&lexer::Lexeme::RPar)));
-        assert_eq!(false, is_beginning_of_sexpr(Some(&lexer::Lexeme::RBracket)));
-        assert_eq!(false, is_beginning_of_sexpr(Some(&lexer::Lexeme::LBracket)));
-        assert_eq!(false, is_beginning_of_sexpr(Some(&lexer::Lexeme::RBracket)));
+        assert_eq!(false, is_beginning_of_sexpr(Some(&lexer::Token::RPar)));
+        assert_eq!(false, is_beginning_of_sexpr(Some(&lexer::Token::RBracket)));
+        assert_eq!(false, is_beginning_of_sexpr(Some(&lexer::Token::LBracket)));
+        assert_eq!(false, is_beginning_of_sexpr(Some(&lexer::Token::RBracket)));
     }
 
     #[test]
@@ -521,7 +521,7 @@ mod tests {
         assert_eq!(
             Err(SyntaxError::EndOfFileExpected(
                 String::from("Syntax error: Expected end of file."),
-                vec![lexer::Lexeme::RPar],
+                vec![lexer::Token::RPar],
             )),
             actual
         );
