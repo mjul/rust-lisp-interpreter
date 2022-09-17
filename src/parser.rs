@@ -10,6 +10,22 @@ pub enum SExpression {
     PAIR(Box<SExpression>, Box<SExpression>),
 }
 
+impl SExpression {
+    /// Create the special NIL atom
+    pub fn new_nil() -> Self {
+        SExpression::ATOM(String::from("NIL"))
+    }
+    /// Create the special T (true) atom
+    pub fn new_true() -> Self {
+        SExpression::ATOM(String::from("T"))
+    }
+    /// Create the special F (false) atom
+    pub fn new_false() -> Self {
+        SExpression::ATOM(String::from("F"))
+    }
+}
+
+
 /// An M-Expression is a meta-expression over S-Expressions.
 /// McCarthy used a special syntax for these, *e.g.* `car[x]` or `car[cons[(A · B); x]]`.
 /// Later Lisps generally use the S-expression syntax for theses, e.g. `(car x)` and `(car (cons ((A B) x)))`.
@@ -114,6 +130,16 @@ fn parse_until<'a>(sentinel: &lexer::Lexeme, lexer: PeekableLexer<'a>) -> (Resul
     (Ok(result), l)
 }
 
+
+/// Determine if next lexeme is the beginning of an S-Expression.
+fn is_beginning_of_sexpr(lexeme: Option<&lexer::Lexeme>) -> bool {
+    match lexeme {
+        Some(lexer::Lexeme::AlphaNum(_)) => true,
+        Some(lexer::Lexeme::LPar) => true,
+        _ => false
+    }
+}
+
 /// Parse an S-Expression from the lexer.
 fn parse_sexpr<'a>(mut lexer: PeekableLexer<'a>) -> (Result<SExpression, SyntaxError>, PeekableLexer<'a>)
 {
@@ -134,7 +160,7 @@ fn parse_sexpr<'a>(mut lexer: PeekableLexer<'a>) -> (Result<SExpression, SyntaxE
         ),
         Some(lexer::Lexeme::LPar) => {
             let mut inners = vec![];
-            while lexer.next_if_eq(&lexer::Lexeme::RPar).is_none() {
+            while is_beginning_of_sexpr(lexer.peek()) {
                 let (result, l_next) = parse_sexpr(lexer);
                 lexer = l_next;
                 match result {
@@ -142,12 +168,22 @@ fn parse_sexpr<'a>(mut lexer: PeekableLexer<'a>) -> (Result<SExpression, SyntaxE
                     Err(_) => { todo!("error in S-expression"); }
                 }
             }
-            match inners.len() {
-                2 => {
-                    (Ok(SExpression::PAIR(Box::new(inners[0].clone()), Box::new(inners[1].clone()))), lexer)
+            let closing_par = lexer.next();
+            match closing_par {
+                Some(_) =>             match inners.len() {
+                    1 => {
+                        // Shorthand (m) => (m, NIL)
+                        (Ok(SExpression::PAIR(Box::new(inners[0].clone()), Box::new(SExpression::new_nil()))), lexer)
+                    }
+                    2 => {
+                        (Ok(SExpression::PAIR(Box::new(inners[0].clone()), Box::new(inners[1].clone()))), lexer)
+                    }
+                    _ => {
+                        todo!("no support for S-Expression shorthand with many elements");
+                    }
                 }
-                _ => {
-                    todo!("malformed S-Expression")
+                None => {
+                    (Err(SyntaxError::EndOfFile(String::from("Syntax error: expected closing parenthesis, got end of file."))), lexer)
                 }
             }
         }
@@ -181,7 +217,7 @@ fn parse_next<'a>(
             lexer,
         ),
         Some(lexer::Lexeme::LPar) => {
-            let (left, lexer) = parse_sexpr(lexer);
+            let (left, mut lexer) = parse_sexpr(lexer);
             match left {
                 Err(SyntaxError::EndOfFile(_)) => (
                     Err(SyntaxError::SExpressionExpected(String::from("Syntax error: Expected S-expression as first element of pair. Got end of file."))), lexer),
@@ -292,6 +328,86 @@ mod tests {
             assert_eq!("'foo", actual);
         }
     */
+
+    #[test]
+    fn is_beginning_of_sexpr_is_true_for_alpha_and_left_paren() {
+        assert_eq!(true, is_beginning_of_sexpr(Some(&lexer::Lexeme::LPar)));
+        assert_eq!(true, is_beginning_of_sexpr(Some(&lexer::Lexeme::AlphaNum(String::from("AB")))));
+    }
+
+    #[test]
+    fn is_beginning_of_sexpr_is_false_for_others() {
+        assert_eq!(false, is_beginning_of_sexpr(Some(&lexer::Lexeme::RPar)));
+        assert_eq!(false, is_beginning_of_sexpr(Some(&lexer::Lexeme::RBracket)));
+        assert_eq!(false, is_beginning_of_sexpr(Some(&lexer::Lexeme::LBracket)));
+        assert_eq!(false, is_beginning_of_sexpr(Some(&lexer::Lexeme::RBracket)));
+    }
+
+
+    #[test]
+    fn parse_sexpr_must_parse_atom() {
+        let mut lexer = lexer::lex("AB").peekable();
+        let (actual, lexer) = parse_sexpr(lexer);
+        assert_eq!(
+            Ok(SExpression::ATOM(String::from("AB"))),
+            actual
+        );
+    }
+
+    #[test]
+    fn parse_sexpr_must_parse_pair_of_atom_atom() {
+        let mut lexer = lexer::lex("(A B)").peekable();
+        let (actual, lexer) = parse_sexpr(lexer);
+        assert_eq!(
+            Ok(SExpression::PAIR(Box::new(SExpression::ATOM(String::from("A"))), Box::new(SExpression::ATOM(String::from("B"))))),
+            actual
+        );
+    }
+
+    #[test]
+    fn parse_sexpr_must_parse_pair_of_atom_pair() {
+        let mut lexer = lexer::lex("(A (B C))").peekable();
+        let (actual, lexer) = parse_sexpr(lexer);
+        assert_eq!(
+            Ok(
+                SExpression::PAIR(
+                    Box::new(SExpression::ATOM(String::from("A"))),
+                    Box::new(SExpression::PAIR(Box::new(SExpression::ATOM(String::from("B"))), Box::new(SExpression::ATOM(String::from("C"))))))),
+            actual
+        );
+    }
+
+    #[test]
+    fn parse_sexpr_must_parse_pair_of_pair_atom() {
+        let mut lexer = lexer::lex("((A B) C)").peekable();
+        let (actual, lexer) = parse_sexpr(lexer);
+        assert_eq!(
+            Ok(
+                SExpression::PAIR(
+                    Box::new(SExpression::PAIR(Box::new(SExpression::ATOM(String::from("A"))), Box::new(SExpression::ATOM(String::from("B"))))),
+                    Box::new(SExpression::ATOM(String::from("C"))),
+                )),
+            actual
+        );
+    }
+
+    #[test]
+    fn parse_sexpr_must_parse_pair_of_pair_pair() {
+        let mut lexer = lexer::lex("((A B) (C D))").peekable();
+        let (actual, lexer) = parse_sexpr(lexer);
+        assert_eq!(
+            Ok(
+                SExpression::PAIR(
+                    Box::new(SExpression::PAIR(Box::new(SExpression::ATOM(String::from("A"))), Box::new(SExpression::ATOM(String::from("B"))))),
+                    Box::new(SExpression::PAIR(Box::new(SExpression::ATOM(String::from("C"))), Box::new(SExpression::ATOM(String::from("D"))))),
+                )),
+            actual
+        );
+    }
+
+
+
+
 
     #[test]
     fn parse_atom() {
