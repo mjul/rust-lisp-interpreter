@@ -60,7 +60,7 @@ pub enum LispExpr {
 /// Syntax error
 #[derive(Eq, PartialEq, Debug, Clone)]
 pub enum SyntaxError {
-    EndOfFile(String),
+    UnexpectedEndOfFile(String),
     EndOfFileExpected(String, Vec<lexer::Lexeme>),
     InvalidCharacter(char),
     MisplacedLexeme(String, lexer::Lexeme),
@@ -114,7 +114,7 @@ fn parse_until<'a>(sentinel: &lexer::Lexeme, lexer: PeekableLexer<'a>) -> (Resul
             }
             Err(err) => {
                 let msg = match err {
-                    SyntaxError::EndOfFile(_) => "Syntax error in expression. Expected expression or closing lexeme. Got end of file.",
+                    SyntaxError::UnexpectedEndOfFile(_) => "Syntax error in expression. Expected expression or closing lexeme. Got end of file.",
                     _ => "Syntax error in expression"
                 };
                 return (
@@ -145,7 +145,7 @@ fn parse_sexpr<'a>(mut lexer: PeekableLexer<'a>) -> (Result<SExpression, SyntaxE
 {
     match lexer.next() {
         None => (
-            Err(SyntaxError::EndOfFile(String::from(
+            Err(SyntaxError::UnexpectedEndOfFile(String::from(
                 "Syntax error: Expected S-expression, got end of file.",
             ))),
             lexer,
@@ -183,7 +183,7 @@ fn parse_sexpr<'a>(mut lexer: PeekableLexer<'a>) -> (Result<SExpression, SyntaxE
                     }
                 }
                 None => {
-                    (Err(SyntaxError::EndOfFile(String::from("Syntax error: expected closing parenthesis, got end of file."))), lexer)
+                    (Err(SyntaxError::UnexpectedEndOfFile(String::from("Syntax error: expected closing parenthesis, got end of file."))), lexer)
                 }
             }
         }
@@ -203,7 +203,7 @@ fn parse_next<'a>(
     let l = lexer.next();
     match l {
         None => (
-            Err(SyntaxError::EndOfFile(String::from(
+            Err(SyntaxError::UnexpectedEndOfFile(String::from(
                 "Syntax error: Expected S-expression, got end of file.",
             ))),
             lexer,
@@ -219,7 +219,7 @@ fn parse_next<'a>(
         Some(lexer::Lexeme::LPar) => {
             let (left, mut lexer) = parse_sexpr(lexer);
             match left {
-                Err(SyntaxError::EndOfFile(_)) => (
+                Err(SyntaxError::UnexpectedEndOfFile(_)) => (
                     Err(SyntaxError::SExpressionExpected(String::from("Syntax error: Expected S-expression as first element of pair. Got end of file."))), lexer),
                 Err(_lerr) => (
                     Err(SyntaxError::SExpressionExpected(String::from("Syntax error: Expected S-expression as first element of pair."))), lexer),
@@ -240,7 +240,7 @@ fn parse_next<'a>(
                         (_, Some(l)) => (
                             Err(SyntaxError::MisplacedLexeme(String::from("Syntax error: Expected closing parenthesis after second element of pair."), l.clone())), lexer),
                         (_, None) => (
-                            Err(SyntaxError::EndOfFile(String::from("Syntax error: Expected closing parenthesis after second element of pair, got end of file."))), lexer),
+                            Err(SyntaxError::UnexpectedEndOfFile(String::from("Syntax error: Expected closing parenthesis after second element of pair, got end of file."))), lexer),
                     }
                 }
             }
@@ -256,9 +256,9 @@ fn parse_next<'a>(
                             let (msg, cause) = match &err {
                                 SyntaxError::MalformedListExpression(_, inner) => {
                                     match **inner {
-                                        SyntaxError::EndOfFile(_) => ("Syntax error in M-Expression: Expected S-Expression or closing bracket. Got end of file.",
-                                                                      (**inner).clone()
-                                                                      //SyntaxError::EndOfFile(String::from("Syntax error: unexpected end of file."))
+                                        SyntaxError::UnexpectedEndOfFile(_) => ("Syntax error in M-Expression: Expected S-Expression or closing bracket. Got end of file.",
+                                                                                (**inner).clone()
+                                                                                //SyntaxError::EndOfFile(String::from("Syntax error: unexpected end of file."))
                                         ),
                                         _ => ("Syntax error in M-Expression", err)
                                     }
@@ -449,7 +449,7 @@ mod tests {
     fn parse_invalid_value_blank() {
         let actual = parse("");
         assert_eq!(
-            Err(SyntaxError::EndOfFile(String::from(
+            Err(SyntaxError::UnexpectedEndOfFile(String::from(
                 "Syntax error: Expected S-expression, got end of file."
             ))),
             actual
@@ -632,7 +632,7 @@ mod tests {
         let actual = parse("eq[A B");
         assert_eq!(
             Err(SyntaxError::MalformedMExpression(String::from("Syntax error in M-Expression: Expected S-Expression or closing bracket. Got end of file."),
-                                                  Box::new(SyntaxError::EndOfFile(String::from("Syntax error: Expected S-expression, got end of file."))))),
+                                                  Box::new(SyntaxError::UnexpectedEndOfFile(String::from("Syntax error: Expected S-expression, got end of file."))))),
             actual
         );
     }
