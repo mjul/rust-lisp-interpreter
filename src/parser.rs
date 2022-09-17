@@ -580,6 +580,63 @@ mod tests {
         );
     }
 
+    // Pair in the shorthand syntax:
+    // l. (m) stands for (m ·NIL).
+    // 2. (m1, · · · , mn) stands for (m1 · (· · · (mn · NIL) · · ·)).
+    // 3. (m1, · · · , mn · x) stands for (m1 · (· · · (mn · x) · · ·)).
+    #[test]
+    #[ignore]
+    fn parse_pair_shorthand_one_element() {
+        let actual = parse("(A)");
+        assert_eq!(
+            Ok(LispExpr::SExpr(SExpression::PAIR(
+                Box::new(SExpression::ATOM(String::from("A"))),
+                Box::new(SExpression::ATOM(String::from("NIL"))),
+            ))),
+            actual
+        );
+    }
+
+    // 2. (m1, · · · , mn) stands for (m1 · (· · · (mn · NIL) · · ·)).
+    #[test]
+    #[ignore]
+    fn parse_pair_shorthand_many_elements() {
+        let actual = parse("(M1 M2 M3)");
+        assert_eq!(
+            Ok(LispExpr::SExpr(SExpression::PAIR(
+                Box::new(SExpression::ATOM(String::from("M1"))),
+                Box::new(SExpression::PAIR(
+                    Box::new(SExpression::ATOM(String::from("M2"))),
+                    Box::new(SExpression::PAIR(
+                        Box::new(SExpression::ATOM(String::from("M3"))),
+                        Box::new(SExpression::ATOM(String::from("NIL")))
+                    ))
+                ))
+            ))),
+            actual
+        );
+    }
+
+    // 3. (m1, · · · , mn · x) stands for (m1 · (· · · (mn · x) · · ·)).
+    #[test]
+    #[ignore]
+    fn parse_pair_shorthand_many_elements_and_end() {
+        let actual = parse("(M1 M2 M3 . X)");
+        assert_eq!(
+            Ok(LispExpr::SExpr(SExpression::PAIR(
+                Box::new(SExpression::ATOM(String::from("M1"))),
+                Box::new(SExpression::PAIR(
+                    Box::new(SExpression::ATOM(String::from("M2"))),
+                    Box::new(SExpression::PAIR(
+                        Box::new(SExpression::ATOM(String::from("M3"))),
+                        Box::new(SExpression::ATOM(String::from("X")))
+                    ))
+                ))
+            ))),
+            actual
+        );
+    }
+
     // Parse the first elementary m-expression, atom (atom variant)
     #[test]
     fn parse_mexpr_atom_of_atom() {
