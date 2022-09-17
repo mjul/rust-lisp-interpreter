@@ -121,7 +121,7 @@ fn parse_until<'a>(
                 l,
             );
         } else {
-            let (arg, l_next) = parse_next(l);
+            let (arg, l_next) = parse_lispexpr(l);
             l = l_next;
             match arg {
                 Ok(a) => {
@@ -249,7 +249,7 @@ fn parse_sexpr<'a>(
     }
 }
 
-fn parse_next<'a>(
+fn parse_lispexpr<'a>(
     mut lexer: PeekableLexer<'a>,
 ) -> (Result<LispExpr, SyntaxError>, PeekableLexer<'a>) {
     let l = lexer.next();
@@ -341,7 +341,7 @@ fn parse_next<'a>(
 /// Parse a string into an Expr representing its abstract syntax tree.
 pub fn parse(input: &str) -> Result<LispExpr, SyntaxError> {
     let lexemes = lex(input).peekable();
-    let (result, lexer) = parse_next(lexemes);
+    let (result, lexer) = parse_lispexpr(lexemes);
     let remaining: Vec<lexer::LexerResult> = lexer.collect();
     match (&result, remaining.is_empty()) {
         (Err(_), _) => result,
