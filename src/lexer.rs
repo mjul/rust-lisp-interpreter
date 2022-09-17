@@ -16,8 +16,24 @@ pub enum Token {
     RBracket,
     /// Alpha-numerical token, the value is the lexeme.
     AlphaNum(String),
-    Invalid(char),
 }
+
+/// Signals an error related to lexing the input.
+#[derive(Debug, Eq, PartialEq, Clone)]
+pub enum LexerError {
+    /// This is not a valid character in the language.
+    InvalidCharacter(char),
+    /// This looks mostly like an atomic symbol, but it is not valid.
+    InvalidAtomicSymbol(String),
+    /// This looks mostly like an function name or variable name, but it is not valid.
+    InvalidFunctionNameOrVariableName(String),
+    /// The lexer is in an invalid state.
+    InvalidLexerState,
+}
+
+/// The lexer returns this result, either a [Token] or a [LexerError].
+/// Then the end of file is reached the lexer returns `Ok(None)`.
+pub type LexerResult = Result<Token, LexerError>;
 
 /// State for the lexer
 pub struct Lexer<'a> {
@@ -30,42 +46,44 @@ impl<'a> Lexer<'a> {
             // skip it
         }
     }
-    fn lex_alphanumeric(&mut self) -> Option<Token> {
+    fn lex_alphanumeric(&mut self) -> LexerResult {
         let mut result = String::new();
         while let Some(ch) = self.iter.next_if(|&ch| ch.is_alphanumeric()) {
             result.push(ch);
         }
         if result.is_empty() {
-            None
+            // This should not happen:
+            // This function should only be called when there is a non-empty alphanumeric lexeme in the input.
+            Err(LexerError::InvalidLexerState)
         } else {
-            Some(Token::AlphaNum(result))
+            Ok(Token::AlphaNum(result))
         }
     }
 
-    fn lex_next(&mut self) -> Option<Token> {
+    fn lex_next(&mut self) -> Option<LexerResult> {
         self.skip_whitespace();
         if let Some(&ch) = self.iter.peek() {
             match ch {
                 '(' => {
                     self.iter.next();
-                    Some(Token::LPar)
+                    Some(Ok(Token::LPar))
                 }
                 ')' => {
                     self.iter.next();
-                    Some(Token::RPar)
+                    Some(Ok(Token::RPar))
                 }
                 '[' => {
                     self.iter.next();
-                    Some(Token::LBracket)
+                    Some(Ok(Token::LBracket))
                 }
                 ']' => {
                     self.iter.next();
-                    Some(Token::RBracket)
+                    Some(Ok(Token::RBracket))
                 }
-                _ if ch.is_alphabetic() => self.lex_alphanumeric(),
+                _ if ch.is_alphabetic() => Some(self.lex_alphanumeric()),
                 _ => {
                     self.iter.next();
-                    Some(Token::Invalid(ch))
+                    Some(Err(LexerError::InvalidCharacter(ch)))
                 }
             }
         } else {
@@ -75,21 +93,23 @@ impl<'a> Lexer<'a> {
 }
 
 impl<'a> From<&'a str> for Lexer<'a> {
+    /// Construct a lexer for a string.
     fn from(input: &'a str) -> Self {
         let iter = input.chars().peekable();
         Lexer { iter }
     }
 }
 
+/// The lexer is an Iterator.
 impl<'a> Iterator for Lexer<'a> {
-    type Item = Token;
+    type Item = Result<Token, LexerError>;
 
-    fn next(&mut self) -> Option<Self::Item> {
+    fn next(&mut self) -> Option<LexerResult> {
         self.lex_next()
     }
 }
 
-/// Tokenize a string into its lexemes.
+/// Tokenize a string returning an iterable stream of lexical tokens.
 pub fn lex(input: &str) -> Lexer {
     Lexer::from(input)
 }
@@ -101,66 +121,69 @@ mod tests {
     #[test]
     fn lexer_must_recognize_left_parenthesis() {
         let mut lexer = lex("(");
-        assert_eq!(Some(Token::LPar), lexer.next());
+        assert_eq!(Some(Ok(Token::LPar)), lexer.next());
         assert_eq!(None, lexer.next());
     }
 
     #[test]
     fn lexer_must_recognize_right_parenthesis() {
         let mut lexer = lex(")");
-        assert_eq!(Some(Token::RPar), lexer.next());
+        assert_eq!(Some(Ok(Token::RPar)), lexer.next());
         assert_eq!(None, lexer.next());
     }
 
     #[test]
     fn lexer_must_recognize_left_bracket() {
         let mut lexer = lex("[");
-        assert_eq!(Some(Token::LBracket), lexer.next());
+        assert_eq!(Some(Ok(Token::LBracket)), lexer.next());
         assert_eq!(None, lexer.next());
     }
 
     #[test]
     fn lexer_must_recognize_right_bracket() {
         let mut lexer = lex("]");
-        assert_eq!(Some(Token::RBracket), lexer.next());
+        assert_eq!(Some(Ok(Token::RBracket)), lexer.next());
         assert_eq!(None, lexer.next());
     }
 
     #[test]
     fn lexer_must_ignore_whitespace_before_lexeme() {
-        assert_eq!(Some(Token::LPar), lex(" (").next());
-        assert_eq!(Some(Token::LPar), lex("  (").next());
+        assert_eq!(Some(Ok(Token::LPar)), lex(" (").next());
+        assert_eq!(Some(Ok(Token::LPar)), lex("  (").next());
     }
 
     #[test]
-    fn lexer_must_ignore_whitespace_after_lexeme() {
+    fn lexer_must_ignore_whitespace_after_lexeme_single() {
         let mut sut = lex(") ");
-        assert_eq!(Some(Token::RPar), sut.next());
+        assert_eq!(Some(Ok(Token::RPar)), sut.next());
         assert_eq!(None, sut.next());
+    }
 
+    #[test]
+    fn lexer_must_ignore_whitespace_after_lexeme_multiple() {
         let mut lexer = lex(")  ");
-        assert_eq!(Some(Token::RPar), lexer.next());
+        assert_eq!(Some(Ok(Token::RPar)), lexer.next());
         assert_eq!(None, lexer.next());
     }
 
     #[test]
     fn lexer_must_recognize_alpha_single_char() {
         let mut sut = lex("A");
-        assert_eq!(Some(Token::AlphaNum(String::from("A"))), sut.next());
+        assert_eq!(Some(Ok(Token::AlphaNum(String::from("A")))), sut.next());
         assert_eq!(None, sut.next());
     }
 
     #[test]
     fn lexer_must_recognize_alpha_multiple_chars() {
         let mut sut = lex("ABC");
-        assert_eq!(Some(Token::AlphaNum(String::from("ABC"))), sut.next());
+        assert_eq!(Some(Ok(Token::AlphaNum(String::from("ABC")))), sut.next());
         assert_eq!(None, sut.next());
     }
 
     #[test]
     fn lexer_must_recognize_alphanumeric() {
         let mut sut = lex("ABC1");
-        assert_eq!(Some(Token::AlphaNum(String::from("ABC1"))), sut.next());
+        assert_eq!(Some(Ok(Token::AlphaNum(String::from("ABC1")))), sut.next());
         assert_eq!(None, sut.next());
     }
 
@@ -170,8 +193,8 @@ mod tests {
     fn lexer_must_recognize_alphanum_whitespace_alphanum() {
         // atoms must be whitespace-separated
         let mut sut = lex("A B");
-        assert_eq!(Some(Token::AlphaNum(String::from("A"))), sut.next());
-        assert_eq!(Some(Token::AlphaNum(String::from("B"))), sut.next());
+        assert_eq!(Some(Ok(Token::AlphaNum(String::from("A")))), sut.next());
+        assert_eq!(Some(Ok(Token::AlphaNum(String::from("B")))), sut.next());
         assert_eq!(None, sut.next());
     }
 
@@ -179,23 +202,24 @@ mod tests {
     fn lexer_must_recognize_lpar_alphanum_rpar() {
         // parens and atoms need no whitespace separation
         let mut sut = lex("(ABC)");
-        assert_eq!(Some(Token::LPar), sut.next());
-        assert_eq!(Some(Token::AlphaNum(String::from("ABC"))), sut.next());
-        assert_eq!(Some(Token::RPar), sut.next());
+        assert_eq!(Some(Ok(Token::LPar)), sut.next());
+        assert_eq!(Some(Ok(Token::AlphaNum(String::from("ABC")))), sut.next());
+        assert_eq!(Some(Ok(Token::RPar)), sut.next());
         assert_eq!(None, sut.next());
     }
 
     #[test]
     fn lexer_must_return_invalid_on_non_atom_non_paren_punctuation() {
         let mut sut = lex(".");
-        assert_eq!(Some(Token::Invalid('.')), sut.next());
+        assert_eq!(Some(Err(LexerError::InvalidCharacter('.'))), sut.next());
         assert_eq!(None, sut.next());
     }
 
     #[test]
     fn lexer_must_return_invalid_on_non_atom_non_paren_curly() {
         let mut sut = lex("{");
-        assert_eq!(Some(Token::Invalid('{')), sut.next());
+        assert_eq!(Some(Err(LexerError::InvalidCharacter('{'))), sut.next());
+        assert_eq!(None, sut.next());
         assert_eq!(None, sut.next());
     }
 }
