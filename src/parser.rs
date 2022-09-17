@@ -347,7 +347,7 @@ mod tests {
     #[test]
     fn parse_sexpr_must_parse_atom() {
         let mut lexer = lexer::lex("AB").peekable();
-        let (actual, lexer) = parse_sexpr(lexer);
+        let (actual, _) = parse_sexpr(lexer);
         assert_eq!(
             Ok(SExpression::ATOM(String::from("AB"))),
             actual
@@ -357,7 +357,7 @@ mod tests {
     #[test]
     fn parse_sexpr_must_parse_pair_of_atom_atom() {
         let mut lexer = lexer::lex("(A B)").peekable();
-        let (actual, lexer) = parse_sexpr(lexer);
+        let (actual, _) = parse_sexpr(lexer);
         assert_eq!(
             Ok(SExpression::PAIR(Box::new(SExpression::ATOM(String::from("A"))), Box::new(SExpression::ATOM(String::from("B"))))),
             actual
@@ -367,7 +367,7 @@ mod tests {
     #[test]
     fn parse_sexpr_must_parse_pair_of_atom_pair() {
         let mut lexer = lexer::lex("(A (B C))").peekable();
-        let (actual, lexer) = parse_sexpr(lexer);
+        let (actual, _) = parse_sexpr(lexer);
         assert_eq!(
             Ok(
                 SExpression::PAIR(
@@ -380,7 +380,7 @@ mod tests {
     #[test]
     fn parse_sexpr_must_parse_pair_of_pair_atom() {
         let mut lexer = lexer::lex("((A B) C)").peekable();
-        let (actual, lexer) = parse_sexpr(lexer);
+        let (actual, _) = parse_sexpr(lexer);
         assert_eq!(
             Ok(
                 SExpression::PAIR(
@@ -394,7 +394,7 @@ mod tests {
     #[test]
     fn parse_sexpr_must_parse_pair_of_pair_pair() {
         let mut lexer = lexer::lex("((A B) (C D))").peekable();
-        let (actual, lexer) = parse_sexpr(lexer);
+        let (actual, _) = parse_sexpr(lexer);
         assert_eq!(
             Ok(
                 SExpression::PAIR(
