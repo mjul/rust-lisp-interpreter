@@ -157,6 +157,7 @@ fn is_beginning_of_sexpr(lexeme: Option<&LexerResult>) -> bool {
 }
 
 /// Parse an S-Expression from the lexer.
+/// Assumes that the ensuing tokens form an S-Expression and returns an error otherwise.
 fn parse_sexpr<'a>(
     mut lexer: PeekableLexer<'a>,
 ) -> (Result<SExpression, SyntaxError>, PeekableLexer<'a>) {
@@ -249,6 +250,8 @@ fn parse_sexpr<'a>(
     }
 }
 
+/// Parse a [LispExpr] from the [Token] stream from the lexer.
+/// Assumes that the next tokens form a valid [LispExpr] and returns an error if they do not.
 fn parse_lispexpr<'a>(
     mut lexer: PeekableLexer<'a>,
 ) -> (Result<LispExpr, SyntaxError>, PeekableLexer<'a>) {
@@ -635,7 +638,7 @@ mod tests {
                     Box::new(SExpression::ATOM(String::from("B"))),
                     Box::new(SExpression::ATOM(String::from("C"))),
                 )),
-            ), )),
+            ),)),
             actual
         );
     }
