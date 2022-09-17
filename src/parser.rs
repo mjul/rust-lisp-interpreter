@@ -60,7 +60,7 @@ pub enum LispExpr {
 /// Syntax error
 #[derive(Eq, PartialEq, Debug, Clone)]
 pub enum SyntaxError {
-    LexerError(String, Box<lexer::LexerError>),
+    LexerError(String, Box<LexerError>),
     UnexpectedEndOfFile(String),
     EndOfFileExpected(String, Vec<LexerResult>),
     InvalidCharacter(char),
@@ -103,10 +103,10 @@ type PeekableLexer<'a> = std::iter::Peekable<lexer::Lexer<'a>>;
 /// Parse until the sentinel lexeme is found.
 /// Consumes the sentinel.
 /// Returns the parsed expressions and the next state of the lexer.
-fn parse_until<'a>(
+fn parse_until(
     sentinel: lexer::Token,
-    lexer: PeekableLexer<'a>,
-) -> (Result<Vec<LispExpr>, SyntaxError>, PeekableLexer<'a>) {
+    lexer: PeekableLexer,
+) -> (Result<Vec<LispExpr>, SyntaxError>, PeekableLexer) {
     let mut result = vec![];
     let mut l = lexer;
     let ok_sentinel = Ok(sentinel);
@@ -158,9 +158,7 @@ fn is_beginning_of_sexpr(lexeme: Option<&LexerResult>) -> bool {
 
 /// Parse an S-Expression from the lexer.
 /// Assumes that the ensuing tokens form an S-Expression and returns an error otherwise.
-fn parse_sexpr<'a>(
-    mut lexer: PeekableLexer<'a>,
-) -> (Result<SExpression, SyntaxError>, PeekableLexer<'a>) {
+fn parse_sexpr(mut lexer: PeekableLexer) -> (Result<SExpression, SyntaxError>, PeekableLexer) {
     match lexer.next() {
         None => (
             Err(SyntaxError::UnexpectedEndOfFile(String::from(
@@ -168,7 +166,7 @@ fn parse_sexpr<'a>(
             ))),
             lexer,
         ),
-        Some(Err(lexer::LexerError::InvalidCharacter(ch))) => {
+        Some(Err(LexerError::InvalidCharacter(ch))) => {
             (Err(SyntaxError::InvalidCharacter(ch)), lexer)
         }
         Some(Ok(lexer::Token::RPar)) => (
@@ -252,9 +250,7 @@ fn parse_sexpr<'a>(
 
 /// Parse a [LispExpr] from the [Token] stream from the lexer.
 /// Assumes that the next tokens form a valid [LispExpr] and returns an error if they do not.
-fn parse_lispexpr<'a>(
-    mut lexer: PeekableLexer<'a>,
-) -> (Result<LispExpr, SyntaxError>, PeekableLexer<'a>) {
+fn parse_lispexpr(mut lexer: PeekableLexer) -> (Result<LispExpr, SyntaxError>, PeekableLexer) {
     let next_token = lexer.peek();
     match next_token {
         None => {
@@ -356,7 +352,7 @@ fn parse_lispexpr<'a>(
 pub fn parse(input: &str) -> Result<LispExpr, SyntaxError> {
     let lexemes = lex(input).peekable();
     let (result, lexer) = parse_lispexpr(lexemes);
-    let remaining: Vec<lexer::LexerResult> = lexer.collect();
+    let remaining: Vec<LexerResult> = lexer.collect();
     match (&result, remaining.is_empty()) {
         (Err(_), _) => result,
         (Ok(_), true) => result,
@@ -422,14 +418,14 @@ mod tests {
 
     #[test]
     fn parse_sexpr_must_parse_atom() {
-        let mut lexer = lexer::lex("AB").peekable();
+        let mut lexer = lex("AB").peekable();
         let (actual, _) = parse_sexpr(lexer);
         assert_eq!(Ok(SExpression::ATOM(String::from("AB"))), actual);
     }
 
     #[test]
     fn parse_sexpr_must_parse_pair_of_atom_atom() {
-        let mut lexer = lexer::lex("(A B)").peekable();
+        let mut lexer = lex("(A B)").peekable();
         let (actual, _) = parse_sexpr(lexer);
         assert_eq!(
             Ok(SExpression::PAIR(
@@ -442,7 +438,7 @@ mod tests {
 
     #[test]
     fn parse_sexpr_must_parse_pair_of_atom_pair() {
-        let mut lexer = lexer::lex("(A (B C))").peekable();
+        let mut lexer = lex("(A (B C))").peekable();
         let (actual, _) = parse_sexpr(lexer);
         assert_eq!(
             Ok(SExpression::PAIR(
@@ -458,7 +454,7 @@ mod tests {
 
     #[test]
     fn parse_sexpr_must_parse_pair_of_pair_atom() {
-        let mut lexer = lexer::lex("((A B) C)").peekable();
+        let mut lexer = lex("((A B) C)").peekable();
         let (actual, _) = parse_sexpr(lexer);
         assert_eq!(
             Ok(SExpression::PAIR(
@@ -474,7 +470,7 @@ mod tests {
 
     #[test]
     fn parse_sexpr_must_parse_pair_of_pair_pair() {
-        let mut lexer = lexer::lex("((A B) (C D))").peekable();
+        let mut lexer = lex("((A B) (C D))").peekable();
         let (actual, _) = parse_sexpr(lexer);
         assert_eq!(
             Ok(SExpression::PAIR(
