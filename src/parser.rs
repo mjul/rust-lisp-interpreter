@@ -252,25 +252,34 @@ fn parse_sexpr<'a>(
 fn parse_lispexpr<'a>(
     mut lexer: PeekableLexer<'a>,
 ) -> (Result<LispExpr, SyntaxError>, PeekableLexer<'a>) {
-    let l = lexer.next();
-    match l {
-        None => (
-            Err(SyntaxError::UnexpectedEndOfFile(String::from(
-                "Syntax error: Expected S-expression, got end of file.",
-            ))),
-            lexer,
-        ),
-        Some(Err(LexerError::InvalidCharacter(ch))) => {
-            (Err(SyntaxError::InvalidCharacter(ch)), lexer)
+    let next_token = lexer.peek();
+    match next_token {
+        None => {
+            lexer.next();
+            (
+                Err(SyntaxError::UnexpectedEndOfFile(String::from(
+                    "Syntax error: Expected S-expression, got end of file.",
+                ))),
+                lexer,
+            )
         }
-        Some(Ok(lexer::Token::RPar)) => (
-            Err(SyntaxError::MisplacedLexeme(
-                String::from("Unmatched closing parenthesis."),
-                lexer::Token::RPar,
-            )),
-            lexer,
-        ),
+        Some(Err(LexerError::InvalidCharacter(ch))) => {
+            let bad_char = *ch;
+            lexer.next();
+            (Err(SyntaxError::InvalidCharacter(bad_char)), lexer)
+        }
+        Some(Ok(lexer::Token::RPar)) => {
+            lexer.next();
+            (
+                Err(SyntaxError::MisplacedLexeme(
+                    String::from("Unmatched closing parenthesis."),
+                    lexer::Token::RPar,
+                )),
+                lexer,
+            )
+        }
         Some(Ok(lexer::Token::LPar)) => {
+            lexer.next();
             let (left, mut lexer) = parse_sexpr(lexer);
             match left {
                 Err(SyntaxError::UnexpectedEndOfFile(_)) => (
@@ -303,12 +312,14 @@ fn parse_lispexpr<'a>(
             }
         }
         Some(Ok(lexer::Token::AlphaNum(s))) => {
+            let lexeme = String::from(s);
+            lexer.next();
             match lexer.next_if_eq(&Ok(lexer::Token::LBracket)) {
                 Some(_) => {
                     // name then left bracket => M-Expression
                     let (args, l_next) = parse_until(lexer::Token::RBracket, lexer);
                     match args {
-                        Ok(exprs) => (Ok(LispExpr::MExpr(s, exprs)), l_next),
+                        Ok(exprs) => (Ok(LispExpr::MExpr(lexeme, exprs)), l_next),
                         Err(SyntaxError::UnexpectedEndOfFile(msg)) => {
                             return (Err(SyntaxError::MalformedMExpression(
                                 String::from("Syntax error in M-Expression: Expected S-Expression or closing bracket. Got end of file."),
@@ -328,7 +339,7 @@ fn parse_lispexpr<'a>(
                 }
                 None => {
                     // No bracket following alphanumeric string => S-Expression
-                    (Ok(LispExpr::SExpr(SExpression::ATOM(s))), lexer)
+                    (Ok(LispExpr::SExpr(SExpression::ATOM(lexeme))), lexer)
                 }
             }
         }
@@ -570,7 +581,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn parse_pair_invalid_value_dotted_pair() {
         // Note, unlike the McCarthy paper we do no allow space in the identifier names, so we don't need the dotted pairs.
         let actual = parse("(A . B)");
@@ -625,7 +635,7 @@ mod tests {
                     Box::new(SExpression::ATOM(String::from("B"))),
                     Box::new(SExpression::ATOM(String::from("C"))),
                 )),
-            ),)),
+            ), )),
             actual
         );
     }
