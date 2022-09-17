@@ -1,3 +1,4 @@
+//! Parser for a Lisp language
 use crate::lexer::{self, lex};
 
 /// An S-Expressions is a Symbolic Expression.

@@ -1,3 +1,3 @@
-/// Lisp Interpreter
+//! Lisp Interpreter
 mod lexer;
 mod parser;
