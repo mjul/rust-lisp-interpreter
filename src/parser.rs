@@ -1,12 +1,32 @@
 //! Parser for a Lisp language
 use crate::lexer::{self, lex, LexerError, LexerResult};
 
+/// An Atomic Symbol is a distinguishable string.
+/// An "atomic symbol" is the building block of [SExpression].
+#[derive(Eq, PartialEq, Debug, Clone)]
+pub struct AtomicSymbol(String);
+
+impl From<String> for AtomicSymbol {
+    /// Construct an [AtomicSymbol] from this String.
+    fn from(s: String) -> Self {
+        // TODO: consider returning singletons for the special names NIL, T and F
+        AtomicSymbol(s)
+    }
+}
+
+impl From<&str> for AtomicSymbol {
+    /// Construct an [AtomicSymbol] from this string.
+    fn from(s: &str) -> Self {
+        AtomicSymbol::from(String::from(s))
+    }
+}
+
 /// An S-Expressions is a Symbolic Expression.
 #[derive(Eq, PartialEq, Debug, Clone)]
 pub enum SExpression {
     /// An Atom is called an "atomic symbol" in McCarthy's 1960 article.
     /// Unlike that article we do not allow spaces in atom names.
-    ATOM(String),
+    ATOM(AtomicSymbol),
     /// A Pair is a dotted pair in McCarthy's article. We use spaces to separate the elements rather than a dot.
     PAIR(Box<SExpression>, Box<SExpression>),
 }
@@ -14,15 +34,15 @@ pub enum SExpression {
 impl SExpression {
     /// Create the special NIL atom
     pub fn new_nil() -> Self {
-        SExpression::ATOM(String::from("NIL"))
+        SExpression::ATOM(AtomicSymbol::from("NIL"))
     }
     /// Create the special T (true) atom
     pub fn new_true() -> Self {
-        SExpression::ATOM(String::from("T"))
+        SExpression::ATOM(AtomicSymbol::from("T"))
     }
     /// Create the special F (false) atom
     pub fn new_false() -> Self {
-        SExpression::ATOM(String::from("F"))
+        SExpression::ATOM(AtomicSymbol::from("F"))
     }
 }
 
@@ -74,7 +94,7 @@ pub enum SyntaxError {
 fn unparse_to(expr: &LispExpr, mut out: String) -> String {
     match expr {
         LispExpr::SExpr(sexpr) => match sexpr {
-            SExpression::ATOM(s) => {
+            SExpression::ATOM(AtomicSymbol(s)) => {
                 out.push_str(s);
             }
             _ => todo!("unparse for S-Expression not fully implemented"),
@@ -241,7 +261,9 @@ fn parse_sexpr(mut lexer: PeekableLexer) -> (Result<SExpression, SyntaxError>, P
                 ),
             }
         }
-        Some(Ok(lexer::Token::AlphaNum(s))) => (Ok(SExpression::ATOM(String::from(s))), lexer),
+        Some(Ok(lexer::Token::AlphaNum(s))) => {
+            (Ok(SExpression::ATOM(AtomicSymbol::from(s))), lexer)
+        }
         _ => {
             todo!("invalid token in S-Expression")
         }
@@ -338,7 +360,10 @@ fn parse_lispexpr(mut lexer: PeekableLexer) -> (Result<LispExpr, SyntaxError>, P
                 }
                 None => {
                     // No bracket following alphanumeric string => S-Expression
-                    (Ok(LispExpr::SExpr(SExpression::ATOM(lexeme))), lexer)
+                    (
+                        Ok(LispExpr::SExpr(SExpression::ATOM(AtomicSymbol(lexeme)))),
+                        lexer,
+                    )
                 }
             }
         }
@@ -369,14 +394,14 @@ mod tests {
 
     #[test]
     fn unparse_atom_string() {
-        let expr = LispExpr::SExpr(SExpression::ATOM(String::from("FOO")));
+        let expr = LispExpr::SExpr(SExpression::ATOM(AtomicSymbol::from("FOO")));
         let actual = unparse(&expr);
         assert_eq!("FOO", actual);
     }
 
     #[test]
     fn unparse_atom_string_number() {
-        let expr = LispExpr::SExpr(SExpression::ATOM(String::from("FOO1")));
+        let expr = LispExpr::SExpr(SExpression::ATOM(AtomicSymbol::from("FOO1")));
         let actual = unparse(&expr);
         assert_eq!("FOO1", actual);
     }
@@ -389,6 +414,19 @@ mod tests {
             assert_eq!("'foo", actual);
         }
     */
+
+    #[test]
+    fn atomic_symbol_from_must_be_implemented_for_string() {
+        assert_eq!(
+            AtomicSymbol(String::from("FOO")),
+            AtomicSymbol::from(String::from("FOO"))
+        );
+    }
+
+    #[test]
+    fn atomic_symbol_from_must_be_implemented_for_str() {
+        assert_eq!(AtomicSymbol(String::from("FOO")), AtomicSymbol::from("FOO"));
+    }
 
     #[test]
     fn is_beginning_of_sexpr_is_true_for_alpha_and_left_paren() {
@@ -420,7 +458,7 @@ mod tests {
     fn parse_sexpr_must_parse_atom() {
         let mut lexer = lex("AB").peekable();
         let (actual, _) = parse_sexpr(lexer);
-        assert_eq!(Ok(SExpression::ATOM(String::from("AB"))), actual);
+        assert_eq!(Ok(SExpression::ATOM(AtomicSymbol::from("AB"))), actual);
     }
 
     #[test]
@@ -429,8 +467,8 @@ mod tests {
         let (actual, _) = parse_sexpr(lexer);
         assert_eq!(
             Ok(SExpression::PAIR(
-                Box::new(SExpression::ATOM(String::from("A"))),
-                Box::new(SExpression::ATOM(String::from("B"))),
+                Box::new(SExpression::ATOM(AtomicSymbol::from("A"))),
+                Box::new(SExpression::ATOM(AtomicSymbol::from("B"))),
             )),
             actual
         );
@@ -442,10 +480,10 @@ mod tests {
         let (actual, _) = parse_sexpr(lexer);
         assert_eq!(
             Ok(SExpression::PAIR(
-                Box::new(SExpression::ATOM(String::from("A"))),
+                Box::new(SExpression::ATOM(AtomicSymbol::from("A"))),
                 Box::new(SExpression::PAIR(
-                    Box::new(SExpression::ATOM(String::from("B"))),
-                    Box::new(SExpression::ATOM(String::from("C"))),
+                    Box::new(SExpression::ATOM(AtomicSymbol::from("B"))),
+                    Box::new(SExpression::ATOM(AtomicSymbol::from("C"))),
                 )),
             )),
             actual
@@ -459,10 +497,10 @@ mod tests {
         assert_eq!(
             Ok(SExpression::PAIR(
                 Box::new(SExpression::PAIR(
-                    Box::new(SExpression::ATOM(String::from("A"))),
-                    Box::new(SExpression::ATOM(String::from("B"))),
+                    Box::new(SExpression::ATOM(AtomicSymbol::from("A"))),
+                    Box::new(SExpression::ATOM(AtomicSymbol::from("B"))),
                 )),
-                Box::new(SExpression::ATOM(String::from("C"))),
+                Box::new(SExpression::ATOM(AtomicSymbol::from("C"))),
             )),
             actual
         );
@@ -475,12 +513,12 @@ mod tests {
         assert_eq!(
             Ok(SExpression::PAIR(
                 Box::new(SExpression::PAIR(
-                    Box::new(SExpression::ATOM(String::from("A"))),
-                    Box::new(SExpression::ATOM(String::from("B"))),
+                    Box::new(SExpression::ATOM(AtomicSymbol::from("A"))),
+                    Box::new(SExpression::ATOM(AtomicSymbol::from("B"))),
                 )),
                 Box::new(SExpression::PAIR(
-                    Box::new(SExpression::ATOM(String::from("C"))),
-                    Box::new(SExpression::ATOM(String::from("D"))),
+                    Box::new(SExpression::ATOM(AtomicSymbol::from("C"))),
+                    Box::new(SExpression::ATOM(AtomicSymbol::from("D"))),
                 )),
             )),
             actual
@@ -491,7 +529,7 @@ mod tests {
     fn parse_atom() {
         let actual = parse("AB");
         assert_eq!(
-            Ok(LispExpr::SExpr(SExpression::ATOM(String::from("AB")))),
+            Ok(LispExpr::SExpr(SExpression::ATOM(AtomicSymbol::from("AB")))),
             actual
         );
     }
@@ -500,7 +538,7 @@ mod tests {
     fn parse_atom_string() {
         let actual = parse("AB");
         assert_eq!(
-            Ok(LispExpr::SExpr(SExpression::ATOM(String::from("AB")))),
+            Ok(LispExpr::SExpr(SExpression::ATOM(AtomicSymbol::from("AB")))),
             actual
         );
     }
@@ -509,7 +547,7 @@ mod tests {
     fn parse_atom_string_and_number() {
         let actual = parse("A1");
         assert_eq!(
-            Ok(LispExpr::SExpr(SExpression::ATOM(String::from("A1")))),
+            Ok(LispExpr::SExpr(SExpression::ATOM(AtomicSymbol::from("A1")))),
             actual
         );
     }
@@ -518,7 +556,7 @@ mod tests {
     fn parse_atom_with_trailing_whitespace() {
         let actual = parse("AB  ");
         assert_eq!(
-            Ok(LispExpr::SExpr(SExpression::ATOM(String::from("AB")))),
+            Ok(LispExpr::SExpr(SExpression::ATOM(AtomicSymbol::from("AB")))),
             actual
         );
     }
@@ -600,8 +638,8 @@ mod tests {
         let actual = parse("(A B)");
         assert_eq!(
             Ok(LispExpr::SExpr(SExpression::PAIR(
-                Box::new(SExpression::ATOM(String::from("A"))),
-                Box::new(SExpression::ATOM(String::from("B"))),
+                Box::new(SExpression::ATOM(AtomicSymbol::from("A"))),
+                Box::new(SExpression::ATOM(AtomicSymbol::from("B"))),
             ))),
             actual
         );
@@ -614,10 +652,10 @@ mod tests {
         assert_eq!(
             Ok(LispExpr::SExpr(SExpression::PAIR(
                 Box::new(SExpression::PAIR(
-                    Box::new(SExpression::ATOM(String::from("A"))),
-                    Box::new(SExpression::ATOM(String::from("B"))),
+                    Box::new(SExpression::ATOM(AtomicSymbol::from("A"))),
+                    Box::new(SExpression::ATOM(AtomicSymbol::from("B"))),
                 )),
-                Box::new(SExpression::ATOM(String::from("C"))),
+                Box::new(SExpression::ATOM(AtomicSymbol::from("C"))),
             ))),
             actual
         );
@@ -629,10 +667,10 @@ mod tests {
         let actual = parse("(A (B C))");
         assert_eq!(
             Ok(LispExpr::SExpr(SExpression::PAIR(
-                Box::new(SExpression::ATOM(String::from("A"))),
+                Box::new(SExpression::ATOM(AtomicSymbol::from("A"))),
                 Box::new(SExpression::PAIR(
-                    Box::new(SExpression::ATOM(String::from("B"))),
-                    Box::new(SExpression::ATOM(String::from("C"))),
+                    Box::new(SExpression::ATOM(AtomicSymbol::from("B"))),
+                    Box::new(SExpression::ATOM(AtomicSymbol::from("C"))),
                 )),
             ),)),
             actual
@@ -646,12 +684,12 @@ mod tests {
         assert_eq!(
             Ok(LispExpr::SExpr(SExpression::PAIR(
                 Box::new(SExpression::PAIR(
-                    Box::new(SExpression::ATOM(String::from("A"))),
-                    Box::new(SExpression::ATOM(String::from("B"))),
+                    Box::new(SExpression::ATOM(AtomicSymbol::from("A"))),
+                    Box::new(SExpression::ATOM(AtomicSymbol::from("B"))),
                 )),
                 Box::new(SExpression::PAIR(
-                    Box::new(SExpression::ATOM(String::from("C"))),
-                    Box::new(SExpression::ATOM(String::from("D"))),
+                    Box::new(SExpression::ATOM(AtomicSymbol::from("C"))),
+                    Box::new(SExpression::ATOM(AtomicSymbol::from("D"))),
                 )),
             ))),
             actual
@@ -668,8 +706,8 @@ mod tests {
         let actual = parse("(A)");
         assert_eq!(
             Ok(LispExpr::SExpr(SExpression::PAIR(
-                Box::new(SExpression::ATOM(String::from("A"))),
-                Box::new(SExpression::ATOM(String::from("NIL"))),
+                Box::new(SExpression::ATOM(AtomicSymbol::from("A"))),
+                Box::new(SExpression::ATOM(AtomicSymbol::from("NIL"))),
             ))),
             actual
         );
@@ -682,12 +720,12 @@ mod tests {
         let actual = parse("(M1 M2 M3)");
         assert_eq!(
             Ok(LispExpr::SExpr(SExpression::PAIR(
-                Box::new(SExpression::ATOM(String::from("M1"))),
+                Box::new(SExpression::ATOM(AtomicSymbol::from("M1"))),
                 Box::new(SExpression::PAIR(
-                    Box::new(SExpression::ATOM(String::from("M2"))),
+                    Box::new(SExpression::ATOM(AtomicSymbol::from("M2"))),
                     Box::new(SExpression::PAIR(
-                        Box::new(SExpression::ATOM(String::from("M3"))),
-                        Box::new(SExpression::ATOM(String::from("NIL"))),
+                        Box::new(SExpression::ATOM(AtomicSymbol::from("M3"))),
+                        Box::new(SExpression::ATOM(AtomicSymbol::from("NIL"))),
                     )),
                 )),
             ))),
@@ -702,12 +740,12 @@ mod tests {
         let actual = parse("(M1 M2 M3 . X)");
         assert_eq!(
             Ok(LispExpr::SExpr(SExpression::PAIR(
-                Box::new(SExpression::ATOM(String::from("M1"))),
+                Box::new(SExpression::ATOM(AtomicSymbol::from("M1"))),
                 Box::new(SExpression::PAIR(
-                    Box::new(SExpression::ATOM(String::from("M2"))),
+                    Box::new(SExpression::ATOM(AtomicSymbol::from("M2"))),
                     Box::new(SExpression::PAIR(
-                        Box::new(SExpression::ATOM(String::from("M3"))),
-                        Box::new(SExpression::ATOM(String::from("X"))),
+                        Box::new(SExpression::ATOM(AtomicSymbol::from("M3"))),
+                        Box::new(SExpression::ATOM(AtomicSymbol::from("X"))),
                     )),
                 )),
             ))),
@@ -722,7 +760,7 @@ mod tests {
         assert_eq!(
             Ok(LispExpr::MExpr(
                 String::from("atom"),
-                vec![LispExpr::SExpr(SExpression::ATOM(String::from("A")))],
+                vec![LispExpr::SExpr(SExpression::ATOM(AtomicSymbol::from("A")))],
             )),
             actual
         );
@@ -736,8 +774,8 @@ mod tests {
             Ok(LispExpr::MExpr(
                 String::from("atom"),
                 vec![LispExpr::SExpr(SExpression::PAIR(
-                    Box::new(SExpression::ATOM(String::from("A"))),
-                    Box::new(SExpression::ATOM(String::from("B"))),
+                    Box::new(SExpression::ATOM(AtomicSymbol::from("A"))),
+                    Box::new(SExpression::ATOM(AtomicSymbol::from("B"))),
                 ))],
             )),
             actual
@@ -753,8 +791,8 @@ mod tests {
             Ok(LispExpr::MExpr(
                 String::from("eq"),
                 vec![
-                    LispExpr::SExpr(SExpression::ATOM(String::from("A"))),
-                    LispExpr::SExpr(SExpression::ATOM(String::from("B"))),
+                    LispExpr::SExpr(SExpression::ATOM(AtomicSymbol::from("A"))),
+                    LispExpr::SExpr(SExpression::ATOM(AtomicSymbol::from("B"))),
                 ],
             )),
             actual
