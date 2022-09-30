@@ -303,43 +303,42 @@ fn parse_lispexpr(mut lexer: PeekableLexer) -> (Result<LispExpr, SyntaxError>, P
         }
         Some(Ok(lexer::Token::LPar)) => {
             lexer.next();
-            let (left, mut lexer) = parse_sexpr(lexer);
-            match left {
-                Err(SyntaxError::UnexpectedEndOfFile(_)) => (
-                    Err(SyntaxError::SExpressionExpected(String::from(
-                        "Expected S-expression as first element of pair. Got end of file.",
-                    ))),
+            let mut inners: Vec<SExpression> = vec![];
+            let (result, mut lexer) = parse_until(lexer::Token::RPar, lexer);
+            match result {
+                Ok(exprs) => match &exprs[..] {
+                    [] => (
+                        Err(SyntaxError::SExpressionExpected(String::from(
+                            "Expected S-expression as first element of pair.",
+                        ))),
+                        lexer,
+                    ),
+                    [LispExpr::SExpr(left)] => (
+                        Err(SyntaxError::SExpressionExpected(String::from(
+                            "Expected S-expression as second element of pair.",
+                        ))),
+                        lexer,
+                    ),
+                    /*[LispExpr::SExpr(left)] =>
+                    (Ok(LispExpr::SExpr(SExpression::PAIR(
+                        Box::new(left.clone()),
+                        Box::new(SExpression::new_nil())))), lexer),*/
+                    [LispExpr::SExpr(left), LispExpr::SExpr(right)] => (
+                        Ok(LispExpr::SExpr(SExpression::PAIR(
+                            Box::new(left.clone()),
+                            Box::new(right.clone()),
+                        ))),
+                        lexer,
+                    ),
+                    _ => todo!("list shorthand"),
+                },
+                Err(e) => (
+                    Err(SyntaxError::MalformedSExpression(
+                        String::from("Invalid pair or list shorthand expression."),
+                        Box::new(e),
+                    )),
                     lexer,
                 ),
-                Err(_lerr) => (
-                    Err(SyntaxError::SExpressionExpected(String::from(
-                        "Expected S-expression as first element of pair.",
-                    ))),
-                    lexer,
-                ),
-                Ok(l) => {
-                    let (right, mut lexer) = parse_sexpr(lexer);
-                    let end_par = lexer.next();
-                    // TODO: clean up or move these patterns to parse_sexpr
-                    match (right, end_par) {
-                        (Err(SyntaxError::InvalidCharacter(ch)), _) => (
-                            Err(SyntaxError::SExpressionExpected(String::from(format!("Expected S-expression as second element of pair. Got invalid character: '{}'", ch)))), lexer),
-                        (Err(_rerr), _) => (
-                            Err(SyntaxError::SExpressionExpected(String::from("Expected S-expression as second element of pair."))),
-                            lexer),
-                        (Ok(r), Some(Ok(lexer::Token::RPar))) => (
-                            Ok(LispExpr::SExpr(SExpression::PAIR(Box::new(l), Box::new(r)))),
-                            lexer,
-                        ),
-                        (_, Some(Ok(l))) => (
-                            Err(SyntaxError::MisplacedLexeme(String::from("Expected closing parenthesis after second element of pair."), l.clone())), lexer),
-                        (_, Some(Err(lerr))) => (
-                            // TODO: use a better error
-                            Err(SyntaxError::LexerError(String::from("Expected closing parenthesis. Got a lexer error."), Box::new(lerr))), lexer),
-                        (_, None) => (
-                            Err(SyntaxError::UnexpectedEndOfFile(String::from("Expected closing parenthesis after second element of pair, got end of file."))), lexer),
-                    }
-                }
             }
         }
         Some(Ok(lexer::Token::AlphaNum(s))) => {
@@ -597,9 +596,12 @@ mod tests {
     fn parse_pair_invalid_value_unbalanced_parens_missing_close() {
         let actual = parse("(");
         assert_eq!(
-            Err(SyntaxError::SExpressionExpected(String::from(
-                "Expected S-expression as first element of pair. Got end of file."
-            ))),
+            Err(SyntaxError::MalformedSExpression(
+                String::from("Invalid pair or list shorthand expression."),
+                Box::new(SyntaxError::UnexpectedEndOfFile(String::from(
+                    "Unexpected end of file."
+                )))
+            )),
             actual
         );
     }
@@ -632,9 +634,13 @@ mod tests {
         // Note, unlike the McCarthy paper we do no allow space in the identifier names, so we don't need the dotted pairs.
         let actual = parse("(A . B)");
         assert_eq!(
-            Err(SyntaxError::SExpressionExpected(String::from(
-                "Expected S-expression as second element of pair. Got invalid character: '.'"
-            ))),
+            Err(SyntaxError::MalformedSExpression(
+                String::from("Invalid pair or list shorthand expression."),
+                Box::new(SyntaxError::MalformedListExpression(
+                    String::from("Syntax error in expression."),
+                    Box::new(SyntaxError::InvalidCharacter('.'))
+                ))
+            )),
             actual
         );
     }
