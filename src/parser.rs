@@ -303,8 +303,8 @@ fn parse_lispexpr(mut lexer: PeekableLexer) -> (Result<LispExpr, SyntaxError>, P
         }
         Some(Ok(lexer::Token::LPar)) => {
             lexer.next();
-            let mut inners: Vec<SExpression> = vec![];
-            let (result, mut lexer) = parse_until(lexer::Token::RPar, lexer);
+            let mut _inners: Vec<SExpression> = vec![];
+            let (result, lexer) = parse_until(lexer::Token::RPar, lexer);
             match result {
                 Ok(exprs) => match &exprs[..] {
                     [] => (
@@ -313,7 +313,7 @@ fn parse_lispexpr(mut lexer: PeekableLexer) -> (Result<LispExpr, SyntaxError>, P
                         ))),
                         lexer,
                     ),
-                    [LispExpr::SExpr(left)] => (
+                    [LispExpr::SExpr(_left)] => (
                         Err(SyntaxError::SExpressionExpected(String::from(
                             "Expected S-expression as second element of pair.",
                         ))),
@@ -465,14 +465,14 @@ mod tests {
 
     #[test]
     fn parse_sexpr_must_parse_atom() {
-        let mut lexer = lex("AB").peekable();
+        let lexer = lex("AB").peekable();
         let (actual, _) = parse_sexpr(lexer);
         assert_eq!(Ok(SExpression::ATOM(AtomicSymbol::from("AB"))), actual);
     }
 
     #[test]
     fn parse_sexpr_must_parse_pair_of_atom_atom() {
-        let mut lexer = lex("(A B)").peekable();
+        let lexer = lex("(A B)").peekable();
         let (actual, _) = parse_sexpr(lexer);
         assert_eq!(
             Ok(SExpression::PAIR(
@@ -485,7 +485,7 @@ mod tests {
 
     #[test]
     fn parse_sexpr_must_parse_pair_of_atom_pair() {
-        let mut lexer = lex("(A (B C))").peekable();
+        let lexer = lex("(A (B C))").peekable();
         let (actual, _) = parse_sexpr(lexer);
         assert_eq!(
             Ok(SExpression::PAIR(

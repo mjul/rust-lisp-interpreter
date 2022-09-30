@@ -77,7 +77,7 @@ fn eval<'a>(expr: &'a SExpression, env: &'a Environment) -> Result<SExpression, 
 }
 
 fn apply<'a>(fname: &String, args: &Vec<LispExpr>) -> Result<SExpression, InterpreterError> {
-    let env = Environment::default();
+    let _env = Environment::default();
     let t: SExpression = SExpression::ATOM(AtomicSymbol::from("T"));
     let f: SExpression = SExpression::ATOM(AtomicSymbol::from("F"));
     match fname.as_str() {
